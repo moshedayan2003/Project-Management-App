@@ -1,13 +1,4 @@
 import pytest
-from fastapi.testclient import TestClient
-
-from app.main import create_app
-
-
-@pytest.fixture
-def client(tmp_path):
-    (tmp_path / "index.html").write_text("<h1>Kanban Studio</h1>")
-    return TestClient(create_app(tmp_path))
 
 
 def login(client, username="user", password="password"):
@@ -57,9 +48,9 @@ def test_tampered_cookie_rejected(client):
     assert client.get("/api/me").status_code == 401
 
 
-def test_sessions_are_per_client(client, tmp_path):
+def test_sessions_are_per_client(client, make_client):
     login(client)
-    other = TestClient(create_app(tmp_path))
+    other = make_client()
     assert other.get("/api/me").status_code == 401
 
 

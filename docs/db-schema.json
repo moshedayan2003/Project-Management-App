@@ -1,0 +1,79 @@
+{
+  "database": "SQLite",
+  "file": "env DB_PATH, default backend/data/pm.db (created, with tables and seed data, if it does not exist)",
+  "tables": {
+    "users": {
+      "columns": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "username": "TEXT NOT NULL UNIQUE",
+        "password_hash": "TEXT NULL"
+      },
+      "notes": "MVP seeds one row: username 'user'. Login stays hardcoded to user/password for now, so password_hash is unused (NULL). It is there so real passwords can be added later without a migration."
+    },
+    "boards": {
+      "columns": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "user_id": "INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE",
+        "data": "TEXT NOT NULL (JSON document, see board_data)",
+        "updated_at": "TEXT NOT NULL (UTC ISO 8601)"
+      },
+      "notes": "One board per user for the MVP, enforced by UNIQUE on user_id. Dropping that constraint (and adding a name column) is the only change needed to allow several boards per user."
+    }
+  },
+  "board_data": {
+    "description": "Stored in boards.data. Same shape as the frontend BoardData type, so the API, the UI and the AI all use one format.",
+    "rules": [
+      "columns has exactly 5 entries with the fixed ids col-backlog, col-discovery, col-progress, col-review, col-done; only title changes",
+      "every card id appears in exactly one column's cardIds, and every cardIds entry exists in cards",
+      "cards is keyed by card id; the key equals the card's id field",
+      "title is non-empty; details may be an empty string",
+      "card order within a column is the order of cardIds"
+    ],
+    "schema": {
+      "type": "object",
+      "required": ["columns", "cards"],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "title", "cardIds"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string", "minLength": 1 },
+              "cardIds": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "cards": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["id", "title", "details"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string", "minLength": 1 },
+              "details": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "example": {
+      "columns": [
+        { "id": "col-backlog", "title": "Backlog", "cardIds": ["card-1"] },
+        { "id": "col-discovery", "title": "Discovery", "cardIds": [] },
+        { "id": "col-progress", "title": "In Progress", "cardIds": [] },
+        { "id": "col-review", "title": "Review", "cardIds": [] },
+        { "id": "col-done", "title": "Done", "cardIds": [] }
+      ],
+      "cards": {
+        "card-1": {
+          "id": "card-1",
+          "title": "Align roadmap themes",
+          "details": "Draft quarterly themes with impact statements and metrics."
+        }
+      }
+    }
+  }
+}

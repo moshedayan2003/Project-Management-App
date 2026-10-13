@@ -88,24 +88,26 @@ Success: first visit to `/` shows only the login form; `user` / `password` shows
 
 ## Part 5: Database modeling
 
-- [ ] Propose schema in `docs/db-schema.json` and describe it in `docs/DATABASE.md`:
+- [x] Propose schema in `docs/db-schema.json` and describe it in `docs/DATABASE.md`:
   - `users(id INTEGER PK, username TEXT UNIQUE, password_hash TEXT NULL)`; MVP seeds `user`
   - `boards(id INTEGER PK, user_id INTEGER UNIQUE FK, data TEXT NOT NULL JSON, updated_at TEXT)`; one board per user for now (drop `UNIQUE` later for multiple boards)
   - `data` holds `{ columns: [{id,title,cardIds}], cards: {id: {id,title,details}} }`
-- [ ] Note the trade-off: whole-board JSON is simple and matches the AI input/output; per-card tables would be needed only for querying or concurrent edits
-- [ ] User reviews and approves the schema
+- [x] Note the trade-off: whole-board JSON is simple and matches the AI input/output; per-card tables would be needed only for querying or concurrent edits
+- [x] User reviews and approves the schema
 
 Success: user signs off on the schema document.
 
 ## Part 6: Backend API
 
-- [ ] `db.py`: create the SQLite file and tables if missing; seed user `user` and the default board (the frontend `initialData`) on first use
-- [ ] Routes (all need a session): `GET /api/board`; `PUT /api/board` (replace whole board, validated); fine-grained routes if the frontend needs them: `POST /api/cards`, `PATCH /api/cards/{id}`, `DELETE /api/cards/{id}`, `POST /api/cards/{id}/move`, `PATCH /api/columns/{id}`
-- [ ] Pydantic models enforce the five fixed column ids, every card in exactly one column, no dangling ids
-- [ ] Shared board-operation functions (create, update, move, delete card; rename column), reused later by the AI
-- [ ] Unit tests with a temporary DB per test: DB created when missing, default board seeded, each operation, validation errors (422/404), 401 without session, data isolated per user (second user cannot see or change the first user's board)
-- [ ] Integration tests (`TestClient`, real SQLite): login, read board, apply a sequence of mutations, reopen the app on the same DB file and confirm state persisted; delete the DB file and confirm recreation
-- [ ] Report backend coverage (aim for about 80% where sensible)
+- [x] `db.py`: create the SQLite file and tables if missing; seed user `user` and the default board (the frontend `initialData`) on first use
+- [x] Routes (all need a session): `GET /api/board`; `PUT /api/board` (replace whole board, validated); fine-grained routes if the frontend needs them: `POST /api/cards`, `PATCH /api/cards/{id}`, `DELETE /api/cards/{id}`, `POST /api/cards/{id}/move`, `PATCH /api/columns/{id}`
+- [x] Pydantic models enforce the five fixed column ids, every card in exactly one column, no dangling ids
+- [x] Shared board-operation functions (create, update, move, delete card; rename column), reused later by the AI
+- [x] Unit tests with a temporary DB per test: DB created when missing, default board seeded, each operation, validation errors (422/404), 401 without session, data isolated per user (second user cannot see or change the first user's board)
+- [x] Integration tests (`TestClient`, real SQLite): login, read board, apply a sequence of mutations, reopen the app on the same DB file and confirm state persisted; delete the DB file and confirm recreation
+- [x] Report backend coverage (aim for about 80% where sensible)
+
+Result: 59 backend tests pass, 100% coverage (board rules and operations, database creation and isolation, every route including 401/404/422 cases, and integration flows: changes survive logout/login and an app restart, and the DB is recreated after the file is deleted). The Docker integration test also reads the board, changes a column, restarts the container and checks the change persisted. Checked on the real container with curl, including data surviving stop and start through the `pm-data` volume. Decisions: every mutating route returns the full updated board; card moves take `column_id` plus an optional `position`; the start scripts mount the `pm-data` Docker volume (user approved the volume). Bug found and fixed: `with sqlite3.connect()` commits but does not close, which leaked connections and, on Windows, made deleting the DB file fail; `db._connect` now always closes.
 
 Success: all backend tests pass; deleting the DB file and starting the server recreates it with the default board.
 
