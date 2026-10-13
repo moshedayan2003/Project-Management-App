@@ -1,21 +1,30 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AuthGate } from "@/components/AuthGate";
+import { stubFetch } from "@/test/fetch";
+import { defaultBoard } from "@/test/fixtures";
 
-const respond = (ok: boolean) => Promise.resolve({ ok } as Response);
+// Fake server: `signedIn` decides /api/me; the board is always available; login succeeds only if `loginOk`.
+const serve = (signedIn: boolean, loginOk = true) =>
+  stubFetch((method, url) => {
+    if (url === "/api/me") return { status: signedIn ? 200 : 401 };
+    if (url === "/api/login") return { status: loginOk ? 200 : 401 };
+    if (url === "/api/board") return { status: 200, body: defaultBoard };
+    return { status: 204 };
+  });
 
 describe("AuthGate", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("shows the login form when not signed in", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => respond(false)));
+    serve(false);
     render(<AuthGate />);
     expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
     expect(screen.queryByText("Kanban Studio")).not.toBeInTheDocument();
   });
 
   it("shows the board when already signed in", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => respond(true)));
+    serve(true);
     render(<AuthGate />);
     expect(await screen.findByRole("heading", { name: "Kanban Studio" })).toBeInTheDocument();
   });
@@ -27,8 +36,7 @@ describe("AuthGate", () => {
   });
 
   it("logs in, shows the board, then logs out", async () => {
-    const fetchMock = vi.fn((url: string) => respond(url === "/api/login"));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = serve(false);
     render(<AuthGate />);
     await userEvent.type(await screen.findByLabelText(/username/i), "user");
     await userEvent.type(screen.getByLabelText(/password/i), "password");
@@ -41,7 +49,7 @@ describe("AuthGate", () => {
   });
 
   it("stays on the login form after a failed login", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => respond(false)));
+    serve(false, false);
     render(<AuthGate />);
     await userEvent.type(await screen.findByLabelText(/username/i), "user");
     await userEvent.type(screen.getByLabelText(/password/i), "bad");

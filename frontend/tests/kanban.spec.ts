@@ -1,10 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { signInWithFreshBoard } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
-  const response = await page.request.post("/api/login", {
-    data: { username: "user", password: "password" },
-  });
-  expect(response.ok()).toBe(true);
+  await signInWithFreshBoard(page);
 });
 
 test("loads the kanban board", async ({ page }) => {

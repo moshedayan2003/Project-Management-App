@@ -9,6 +9,7 @@ type KanbanColumnProps = {
   column: Column;
   cards: Card[];
   onRename: (columnId: string, title: string) => void;
+  onRenameCommit: (columnId: string, title: string) => void;
   onAddCard: (columnId: string, title: string, details: string) => void;
   onDeleteCard: (columnId: string, cardId: string) => void;
   onUpdateCard: (cardId: string, title: string, details: string) => void;
@@ -18,6 +19,7 @@ export const KanbanColumn = ({
   column,
   cards,
   onRename,
+  onRenameCommit,
   onAddCard,
   onDeleteCard,
   onUpdateCard,
@@ -44,6 +46,7 @@ export const KanbanColumn = ({
           <input
             value={column.title}
             onChange={(event) => onRename(column.id, event.target.value)}
+            onBlur={(event) => onRenameCommit(column.id, event.target.value)}
             className="mt-3 w-full bg-transparent font-display text-lg font-semibold text-[var(--navy-dark)] outline-none"
             aria-label="Column title"
           />
