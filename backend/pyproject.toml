@@ -1,0 +1,23 @@
+[project]
+name = "pm-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "python-dotenv",
+    "itsdangerous",
+    "openai",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-cov", "httpx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--cov=app --cov-report=term-missing -m 'not live and not docker'"
+markers = [
+    "live: calls the real OpenRouter API",
+    "docker: builds and runs the Docker container",
+]
