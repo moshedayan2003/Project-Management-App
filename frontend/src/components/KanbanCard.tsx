@@ -56,7 +56,7 @@ export const KanbanCard = ({ card, onDelete, onUpdate }: KanbanCardProps) => {
               setDraft((prev) => ({ ...prev, title: event.target.value }))
             }
             aria-label="Card title"
-            className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-medium text-[var(--navy-dark)] outline-none transition focus:border-[var(--primary-blue)]"
+            className="w-full rounded-xl border border-(--stroke) bg-white px-3 py-2 text-sm font-medium text-foreground outline-none transition focus:border-(--primary-blue)"
             required
           />
           <textarea
@@ -66,39 +66,39 @@ export const KanbanCard = ({ card, onDelete, onUpdate }: KanbanCardProps) => {
             }
             aria-label="Card details"
             rows={3}
-            className="w-full resize-none rounded-xl border border-[var(--stroke)] bg-white px-3 py-2 text-sm text-[var(--gray-text)] outline-none transition focus:border-[var(--primary-blue)]"
+            className="w-full resize-none rounded-xl border border-(--stroke) bg-white px-3 py-2 text-sm text-(--gray-text) outline-none transition focus:border-(--primary-blue)"
           />
           <div className="flex items-center gap-2">
             <button
               type="submit"
-              className="rounded-full bg-[var(--secondary-purple)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:brightness-110"
+              className="rounded-full bg-(--secondary-purple) px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:brightness-110"
             >
               Save
             </button>
             <button
               type="button"
               onClick={() => setIsEditing(false)}
-              className="rounded-full border border-[var(--stroke)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--gray-text)] transition hover:text-[var(--navy-dark)]"
+              className="rounded-full border border-(--stroke) px-3 py-2 text-xs font-semibold uppercase tracking-wide text-(--gray-text) transition hover:text-foreground"
             >
               Cancel
             </button>
           </div>
         </form>
       ) : (
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h4 className="font-display text-base font-semibold text-[var(--navy-dark)]">
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+          <div className="min-w-[7rem] flex-1">
+            <h4 className="font-display text-base font-semibold text-foreground">
               {card.title}
             </h4>
-            <p className="mt-2 text-sm leading-6 text-[var(--gray-text)]">
+            <p className="mt-2 text-sm leading-6 text-(--gray-text)">
               {card.details}
             </p>
           </div>
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={startEditing}
-              className="rounded-full border border-transparent px-2 py-1 text-xs font-semibold text-[var(--primary-blue)] transition hover:border-[var(--stroke)]"
+              className="rounded-full border border-transparent px-2 py-1 text-xs font-semibold text-(--primary-blue) transition hover:border-(--stroke)"
               aria-label={`Edit ${card.title}`}
             >
               Edit
@@ -106,7 +106,7 @@ export const KanbanCard = ({ card, onDelete, onUpdate }: KanbanCardProps) => {
             <button
               type="button"
               onClick={() => onDelete(card.id)}
-              className="rounded-full border border-transparent px-2 py-1 text-xs font-semibold text-[var(--gray-text)] transition hover:border-[var(--stroke)] hover:text-[var(--navy-dark)]"
+              className="rounded-full border border-transparent px-2 py-1 text-xs font-semibold text-(--gray-text) transition hover:border-(--stroke) hover:text-foreground"
               aria-label={`Delete ${card.title}`}
             >
               Remove

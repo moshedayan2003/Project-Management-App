@@ -6,11 +6,19 @@ export class ApiError extends Error {
   }
 }
 
-const request = async (
+export type ChatMessage = { role: "user" | "assistant"; content: string };
+export type ChatResult = {
+  message: string;
+  board: BoardData;
+  applied: unknown[];
+  skipped: unknown[];
+};
+
+const request = async <T = BoardData>(
   method: string,
   path: string,
   body?: unknown
-): Promise<BoardData> => {
+): Promise<T> => {
   const response = await fetch(path, {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,
@@ -36,4 +44,6 @@ export const api = {
   deleteCard: (cardId: string) => request("DELETE", `/api/cards/${cardId}`),
   renameColumn: (columnId: string, title: string) =>
     request("PATCH", `/api/columns/${columnId}`, { title }),
+  chat: (message: string, history: ChatMessage[]) =>
+    request<ChatResult>("POST", "/api/chat", { message, history }),
 };

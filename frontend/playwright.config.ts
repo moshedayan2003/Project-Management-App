@@ -19,6 +19,7 @@ export default defineConfig({
     command: "uv run uvicorn app.main:app --host 127.0.0.1 --port 3000",
     cwd: "../backend",
     env: {
+      AI_STUB: "1",
       STATIC_DIR: "../frontend/out",
       DB_PATH: path.join(os.tmpdir(), "pm-e2e.db"),
     },

@@ -13,6 +13,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { ChatSidebar } from "@/components/ChatSidebar";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
 import { api, ApiError } from "@/lib/api";
@@ -142,7 +143,7 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
 
   if (!board) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md items-center justify-center px-6 text-sm text-[var(--gray-text)]">
+      <main className="mx-auto flex min-h-screen max-w-md items-center justify-center px-6 text-sm text-(--gray-text)">
         {error || "Loading board..."}
       </main>
     );
@@ -151,21 +152,22 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
   const activeCard = activeCardId ? board.cards[activeCardId] : null;
 
   return (
-    <div className="relative overflow-hidden">
-      <div className="pointer-events-none absolute left-0 top-0 h-[420px] w-[420px] -translate-x-1/3 -translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(32,157,215,0.25)_0%,_rgba(32,157,215,0.05)_55%,_transparent_70%)]" />
-      <div className="pointer-events-none absolute bottom-0 right-0 h-[520px] w-[520px] translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(117,57,145,0.18)_0%,_rgba(117,57,145,0.05)_55%,_transparent_75%)]" />
+    <div className="relative overflow-clip">
+      <div className="pointer-events-none absolute left-0 top-0 h-105 w-105 -translate-x-1/3 -translate-y-1/3 rounded-full bg-[radial-gradient(circle,rgba(32,157,215,0.25)_0%,rgba(32,157,215,0.05)_55%,transparent_70%)]" />
+      <div className="pointer-events-none absolute bottom-0 right-0 h-130 w-130 translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,rgba(117,57,145,0.18)_0%,rgba(117,57,145,0.05)_55%,transparent_75%)]" />
 
-      <main className="relative mx-auto flex min-h-screen max-w-[1500px] flex-col gap-10 px-6 pb-16 pt-12">
-        <header className="flex flex-col gap-6 rounded-[32px] border border-[var(--stroke)] bg-white/80 p-8 shadow-[var(--shadow)] backdrop-blur">
+      <div className="relative mx-auto flex min-h-screen max-w-475 flex-col xl:flex-row">
+      <main className="flex min-w-0 flex-1 flex-col gap-10 px-6 pb-16 pt-12">
+        <header className="flex flex-col gap-6 rounded-4xl border border-(--stroke) bg-white/80 p-8 shadow-(--shadow) backdrop-blur">
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--gray-text)]">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-(--gray-text)">
                 Single Board Kanban
               </p>
-              <h1 className="mt-3 font-display text-4xl font-semibold text-[var(--navy-dark)]">
+              <h1 className="mt-3 font-display text-4xl font-semibold text-foreground">
                 Kanban Studio
               </h1>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--gray-text)]">
+              <p className="mt-3 max-w-xl text-sm leading-6 text-(--gray-text)">
                 Keep momentum visible. Rename columns, drag cards between stages,
                 and capture quick notes without getting buried in settings.
               </p>
@@ -174,15 +176,15 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
               <button
                 type="button"
                 onClick={onLogout}
-                className="rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--gray-text)] transition hover:text-[var(--navy-dark)]"
+                className="rounded-full border border-(--stroke) px-4 py-2 text-xs font-semibold uppercase tracking-wide text-(--gray-text) transition hover:text-foreground"
               >
                 Log out
               </button>
-              <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
+              <div className="hidden rounded-2xl border border-(--stroke) bg-background px-5 py-4 2xl:block">
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-(--gray-text)">
                 Focus
               </p>
-              <p className="mt-2 text-lg font-semibold text-[var(--primary-blue)]">
+              <p className="mt-2 text-lg font-semibold text-(--primary-blue)">
                 One board. Five columns. Zero clutter.
               </p>
             </div>
@@ -192,9 +194,9 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
             {board.columns.map((column) => (
               <div
                 key={column.id}
-                className="flex items-center gap-2 rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--navy-dark)]"
+                className="flex items-center gap-2 rounded-full border border-(--stroke) px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground"
               >
-                <span className="h-2 w-2 rounded-full bg-[var(--accent-yellow)]" />
+                <span className="h-2 w-2 rounded-full bg-(--accent-yellow)" />
                 {column.title}
               </div>
             ))}
@@ -232,13 +234,15 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
           </section>
           <DragOverlay>
             {activeCard ? (
-              <div className="w-[260px]">
+              <div className="w-65">
                 <KanbanCardPreview card={activeCard} />
               </div>
             ) : null}
           </DragOverlay>
         </DndContext>
       </main>
+      <ChatSidebar onBoardChange={setBoard} onUnauthorized={onLogout} />
+      </div>
     </div>
   );
 };

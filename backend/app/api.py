@@ -1,12 +1,14 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
+from fastapi import HTTPException
+from pydantic import BaseModel, Field, ValidationError
 
+from app import ai
 from app import board as ops
 from app import db
 from app.auth import current_user
-from app.board import Board, Title
+from app.board import Board, NotFoundError, Title
 
 router = APIRouter(prefix="/api")
 
@@ -90,3 +92,47 @@ def rename_column(
 ) -> Board:
     board = ops.rename_column(user_board.load(), column_id, body.title)
     return user_board.save(board)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1)
+    history: list[ai.ChatMessage] = []
+
+
+def apply_operation(board: Board, op: ai.Operation) -> Board:
+    match op:
+        case ai.CreateCard():
+            return ops.create_card(board, op.column_id, op.title, op.details)
+        case ai.UpdateCard():
+            return ops.update_card(board, op.card_id, op.title, op.details)
+        case ai.MoveCard():
+            return ops.move_card(board, op.card_id, op.column_id, op.position)
+        case ai.DeleteCard():
+            return ops.delete_card(board, op.card_id)
+        case ai.RenameColumn():
+            return ops.rename_column(board, op.column_id, op.title)
+
+
+@router.post("/chat")
+def chat(body: ChatRequest, user_board: Annotated[UserBoard, Depends()]):
+    board = user_board.load()
+    try:
+        reply = ai.chat(board, body.history, body.message)
+    except ai.AIError as error:
+        raise HTTPException(status_code=502, detail=str(error))
+    applied, skipped = [], []
+    for op in reply.operations:
+        # Work on a copy so an invalid operation never leaves the board half changed.
+        candidate = board.model_copy(deep=True)
+        try:
+            apply_operation(candidate, op)
+            board = Board.model_validate(candidate.model_dump())
+            applied.append(op)
+        except (NotFoundError, ValidationError) as error:
+            skipped.append({"operation": op, "error": str(error)})
+    return {
+        "message": reply.message,
+        "board": user_board.save(board),
+        "applied": applied,
+        "skipped": skipped,
+    }

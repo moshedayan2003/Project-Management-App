@@ -5,9 +5,9 @@ type LoginFormProps = {
 };
 
 const inputClass =
-  "rounded-xl border border-[var(--stroke)] bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-[var(--navy-dark)] outline-none transition focus:border-[var(--primary-blue)]";
+  "rounded-xl border border-(--stroke) bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-foreground outline-none transition focus:border-(--primary-blue)";
 const labelClass =
-  "flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)]";
+  "flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-(--gray-text)";
 
 export const LoginForm = ({ onLogin }: LoginFormProps) => {
   const [username, setUsername] = useState("");
@@ -26,13 +26,13 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
       <form
         onSubmit={handleSubmit}
-        className="flex flex-col gap-4 rounded-[32px] border border-[var(--stroke)] bg-white/80 p-8 shadow-[var(--shadow)]"
+        className="flex flex-col gap-4 rounded-4xl border border-(--stroke) bg-white/80 p-8 shadow-(--shadow)"
       >
-        <div className="h-2 w-10 rounded-full bg-[var(--accent-yellow)]" />
-        <h1 className="font-display text-3xl font-semibold text-[var(--navy-dark)]">
+        <div className="h-2 w-10 rounded-full bg-(--accent-yellow)" />
+        <h1 className="font-display text-3xl font-semibold text-foreground">
           Sign in
         </h1>
-        <p className="text-sm text-[var(--gray-text)]">
+        <p className="text-sm text-(--gray-text)">
           Sign in to open your Kanban board.
         </p>
         <label className={labelClass}>
@@ -63,7 +63,7 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
         )}
         <button
           type="submit"
-          className="rounded-full bg-[var(--secondary-purple)] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:brightness-110"
+          className="rounded-full bg-(--secondary-purple) px-4 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:brightness-110"
         >
           Sign in
         </button>

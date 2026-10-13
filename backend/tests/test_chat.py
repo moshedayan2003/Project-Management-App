@@ -1,0 +1,202 @@
+import json
+from types import SimpleNamespace
+
+import pytest
+from openai import APIConnectionError
+
+from app import ai
+from app.board import default_board
+
+
+@pytest.fixture
+def llm(monkeypatch):
+    """Replace the network call. Set llm.reply to the model's JSON (dict) or raw text; llm.calls records inputs."""
+    state = SimpleNamespace(reply={"message": "ok", "operations": []}, calls=[])
+
+    def fake_complete(messages, response_format=None):
+        state.calls.append(messages)
+        if isinstance(state.reply, Exception):
+            raise state.reply
+        return state.reply if isinstance(state.reply, str) else json.dumps(state.reply)
+
+    monkeypatch.setattr(ai, "complete", fake_complete)
+    return state
+
+
+def chat(client, message="hi", history=None):
+    return client.post("/api/chat", json={"message": message, "history": history or []})
+
+
+def board_of(client):
+    return client.get("/api/board").json()
+
+
+def column(board, column_id):
+    return next(c for c in board["columns"] if c["id"] == column_id)
+
+
+# --- operations
+
+
+def test_create_card(auth_client, llm):
+    llm.reply = {"message": "Added.", "operations": [
+        {"type": "create_card", "column_id": "col-done", "title": "New", "details": "d"}]}
+    data = chat(auth_client).json()
+    assert data["message"] == "Added."
+    assert len(data["applied"]) == 1 and data["skipped"] == []
+    new_id = column(data["board"], "col-done")["cardIds"][-1]
+    assert data["board"]["cards"][new_id]["title"] == "New"
+    assert board_of(auth_client) == data["board"]
+
+
+def test_update_move_delete_rename(auth_client, llm):
+    llm.reply = {"message": "Done.", "operations": [
+        {"type": "update_card", "card_id": "card-1", "title": "Renamed"},
+        {"type": "move_card", "card_id": "card-2", "column_id": "col-done", "position": 0},
+        {"type": "delete_card", "card_id": "card-3"},
+        {"type": "rename_column", "column_id": "col-review", "title": "QA"}]}
+    data = chat(auth_client).json()
+    board = data["board"]
+    assert len(data["applied"]) == 4 and data["skipped"] == []
+    assert board["cards"]["card-1"]["title"] == "Renamed"
+    assert board["cards"]["card-1"]["details"] == default_board().cards["card-1"].details
+    assert column(board, "col-done")["cardIds"][0] == "card-2"
+    assert "card-3" not in board["cards"]
+    assert column(board, "col-review")["title"] == "QA"
+    assert board_of(auth_client) == board
+
+
+def test_operations_apply_in_order(auth_client, llm):
+    llm.reply = {"message": "m", "operations": [
+        {"type": "move_card", "card_id": "card-1", "column_id": "col-done"},
+        {"type": "delete_card", "card_id": "card-1"}]}
+    board = chat(auth_client).json()["board"]
+    assert "card-1" not in board["cards"]
+    assert "card-1" not in column(board, "col-done")["cardIds"]
+
+
+def test_plain_reply_leaves_board_unchanged(auth_client, llm):
+    llm.reply = {"message": "There are 8 cards.", "operations": []}
+    data = chat(auth_client).json()
+    assert data["applied"] == [] and data["skipped"] == []
+    assert data["board"] == default_board().model_dump()
+
+
+# --- invalid operations are skipped and the board stays consistent
+
+
+def test_invalid_operations_are_skipped(auth_client, llm):
+    llm.reply = {"message": "m", "operations": [
+        {"type": "delete_card", "card_id": "nope"},
+        {"type": "move_card", "card_id": "card-1", "column_id": "col-nope"},
+        {"type": "create_card", "column_id": "col-nope", "title": "X"},
+        {"type": "create_card", "column_id": "col-done", "title": "   "},
+        {"type": "rename_column", "column_id": "col-done", "title": ""},
+        {"type": "update_card", "card_id": "card-1", "title": " "},
+        {"type": "delete_card", "card_id": "card-8"}]}
+    data = chat(auth_client).json()
+    assert len(data["skipped"]) == 6
+    assert [op["card_id"] for op in data["applied"]] == ["card-8"]
+    expected = default_board()
+    expected.cards.pop("card-8")
+    expected.columns[4].cardIds.remove("card-8")
+    assert data["board"] == expected.model_dump()
+    assert board_of(auth_client) == data["board"]
+
+
+# --- prompt contents and history
+
+
+def test_board_and_history_are_sent_to_the_model(auth_client, llm):
+    history = [{"role": "user", "content": "first"}, {"role": "assistant", "content": "answer"}]
+    chat(auth_client, "second", history)
+    messages = llm.calls[0]
+    assert messages[0]["role"] == "system"
+    assert default_board().model_dump_json() in messages[0]["content"]
+    assert [m["content"] for m in messages[1:]] == ["first", "answer", "second"]
+    assert [m["role"] for m in messages[1:]] == ["user", "assistant", "user"]
+
+
+def test_prompt_uses_the_current_board(auth_client, llm):
+    auth_client.patch("/api/columns/col-done", json={"title": "Shipped"})
+    chat(auth_client)
+    assert "Shipped" in llm.calls[0][0]["content"]
+
+
+# --- errors
+
+
+@pytest.mark.parametrize("raw", ["not json", "{}", '{"message": "m", "operations": [{"type": "explode"}]}', ""])
+def test_malformed_model_output_is_a_clean_502(auth_client, llm, raw):
+    llm.reply = raw
+    response = chat(auth_client)
+    assert response.status_code == 502
+    assert board_of(auth_client) == default_board().model_dump()
+
+
+def test_llm_failure_is_a_clean_502(auth_client, llm):
+    llm.reply = ai.AIError("AI request failed: timeout")
+    response = chat(auth_client)
+    assert response.status_code == 502
+    assert "timeout" in response.json()["detail"]
+
+
+def test_empty_message_is_422(auth_client, llm):
+    assert chat(auth_client, "").status_code == 422
+    assert llm.calls == []
+
+
+def test_chat_requires_login(client, llm):
+    assert chat(client).status_code == 401
+    assert llm.calls == []
+
+
+# --- the real complete() with a fake SDK client
+
+
+class FakeOpenAI:
+    def __init__(self, response=None, error=None):
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+        self.response, self.error = response, error
+
+    def create(self, **kwargs):
+        if self.error:
+            raise self.error
+        return self.response
+
+
+def test_complete_returns_content(monkeypatch):
+    response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="hi"))])
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setattr(ai, "OpenAI", lambda **kw: FakeOpenAI(response))
+    assert ai.complete([]) == "hi"
+
+
+def test_complete_turns_sdk_errors_into_aierror(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    error = APIConnectionError(request=SimpleNamespace())
+    monkeypatch.setattr(ai, "OpenAI", lambda **kw: FakeOpenAI(error=error))
+    with pytest.raises(ai.AIError):
+        ai.complete([])
+
+
+def test_complete_handles_openrouter_error_body(monkeypatch):
+    # Regression: an overloaded free model returns 200 with choices=None and an error field.
+    response = SimpleNamespace(choices=None, error={"message": "Service temporarily overloaded"})
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setattr(ai, "OpenAI", lambda **kw: FakeOpenAI(response))
+    with pytest.raises(ai.AIError, match="overloaded"):
+        ai.complete([])
+
+
+# --- AI_STUB (offline mode used by the e2e tests)
+
+
+def test_stub_mode(monkeypatch):
+    monkeypatch.setenv("AI_STUB", "1")
+    plain = json.loads(ai.complete([{"role": "user", "content": "hello"}]))
+    assert plain == {"message": "Stub reply.", "operations": []}
+    scripted = ai.complete([{"role": "user", "content": 'STUB:{"message": "x", "operations": []}'}])
+    assert json.loads(scripted)["message"] == "x"
+    with pytest.raises(ai.AIError):
+        ai.complete([{"role": "user", "content": "please fail"}])

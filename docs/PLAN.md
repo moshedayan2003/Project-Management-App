@@ -26,6 +26,18 @@ Check off items (`[x]`) as they are completed. Stop for user approval where a pa
 - **Drag and drop:** collision detection is `pointerWithin` first, falling back to `closestCorners`, so a card lands in the column under the pointer (the plain `closestCorners` default failed for empty or small columns). Drag listeners are not attached while a card is being edited.
 - **Test setup:** Playwright runs with one worker (all tests share the one user and board), uses a temp database, and resets the board to the demo board before each test. Restart persistence is checked in the Docker integration test and by hand on the container, not by Playwright. `npm run test:e2e` needs `uv` on PATH (`pip install uv` puts it in the user Scripts folder, which may not be on PATH on Windows).
 
+## Running things on this machine (Windows)
+
+Learned while building; use these to avoid rediscovering them.
+
+- **`uv` is not on PATH** in the Bash or PowerShell tools. It lives in `C:\Users\moshe\AppData\Roaming\Python\Python314\Scripts` (`pip install uv` put it there). Add it per session: PowerShell `$env:Path += ";C:\Users\moshe\AppData\Roaming\Python\Python314\Scripts"`; Bash `export PATH="$PATH:/c/Users/moshe/AppData/Roaming/Python/Python314/Scripts"`. `python -m uv` also works. `npm run test:e2e` needs the same PATH.
+- **Backend commands, run from `backend/`:** `uv run pytest` (about 4 s, 77 tests, excludes `live` and `docker`), `uv run pytest -m live --no-cov` (real OpenRouter calls, 5 to 40 s each, needs the key in the project-root `.env`), `uv run pytest -m docker --no-cov` (builds the image, 1 to 2 minutes).
+- **Frontend commands, run from `frontend/`:** `npm run test:unit`, `npm run test:e2e` (builds the static site and starts uvicorn itself on port 3000 with a temp database; no manual server needed).
+- **Run the app locally for manual checks:** `npm run build` in `frontend/`, then from `backend/` run `STATIC_DIR=../frontend/out uv run uvicorn app.main:app` (port 8000).
+- **Run in Docker:** `scripts/start.ps1` builds the image and runs the container on port 8000 with `--env-file .env` and the `pm-data` volume; `scripts/stop.ps1` removes it. The `.sh` scripts are untested on this machine.
+- **`.env` is read from the project root** by `app/ai.py` locally; in Docker the same values arrive through `--env-file`.
+- Free-model calls are slow and may rate-limit, so keep live tests few and never put them in the default run.
+
 ## Testing strategy
 
 Applies to every part. A part is not done until its tests pass and coverage has been reported (the target is a guide, not a gate).
@@ -140,33 +152,41 @@ Success: a fully persistent Kanban board; all unit, backend and e2e tests pass.
 
 ## Part 8: AI connectivity
 
-- [ ] `ai.py`: OpenAI SDK client (model name is read from the line in AGENTS.md, currently `nvidia/nemotron-3-ultra-550b-a55b:free`; `.env` already holds `OPENROUTER_API_KEY`; the container receives it through `--env-file .env`) with `base_url=https://openrouter.ai/api/v1`, key from `.env`, model from AGENTS.md
-- [ ] Temporary `POST /api/ai/test` (or a pytest/CLI check) that asks "What is 2+2?"
-- [ ] Tests: unit test with a mocked client; one live test (skipped when no key) asserting the answer contains "4"
-- [ ] If the free model rate-limits or lacks structured-output support, record this in docs and raise it with the user
+Decisions (agreed with user): the model name is a hardcoded constant in `ai.py` (not parsed from AGENTS.md); no temporary test route, a live pytest test proves connectivity; the key is read lazily from the project-root `.env` (or the container environment); 60 s timeout, no retries, errors surface as exceptions (Part 9 turns them into a clean error); no mocked client, tests go all the way to OpenRouter; the future chat endpoint is `POST /api/chat` (Part 9).
 
-Success: a live call through OpenRouter returns an answer containing 4. Remove or keep the test route only if useful.
+- [x] `ai.py`: OpenAI SDK client with `base_url=https://openrouter.ai/api/v1`, key `OPENROUTER_API_KEY`, hardcoded model `nvidia/nemotron-3-ultra-550b-a55b:free`
+- [x] Live test (marker `live`, skipped without a key) asking "What is 2+2?" and asserting the answer contains "4"
+- [x] Structured outputs and rate limits: not checked here; moved to the first item of Part 9 (see below)
+
+Result: the live test passes against the real model (about 40 s for one short answer). Mock test and test route dropped by decision.
+
+Success: a live call through OpenRouter returns an answer containing 4.
 
 ## Part 9: AI with Kanban context and Structured Outputs
 
-- [ ] Define the response schema: `{ message: string, operations: Operation[] }` where an operation is one of `create_card`, `update_card`, `move_card`, `delete_card`, `rename_column` (discriminated union with explicit fields)
-- [ ] `POST /api/chat` (requires a session via `current_user`, works on the signed-in user's board) takes `{ message, history }`; the server loads the user's board, sends system prompt + board JSON + history + question, parses the structured response
-- [ ] Apply operations with the Part 6 functions in `board.py` in order (they raise `NotFoundError` for unknown ids); skip and report invalid operations (unknown ids); save the board; return `{ message, board, applied }`
-- [ ] Prompt rules: columns are fixed; refer to cards by id; reply briefly
-- [ ] Unit tests (mocked LLM): each operation type, multiple operations in one reply, no-op reply, invalid operation ids, malformed or non-JSON model output, LLM timeout/error returning a clean error, history passed through, board JSON included in the prompt
-- [ ] Integration tests (`TestClient`, real SQLite, mocked LLM): chat request changes the stored board and a following `GET /api/board` reflects it; 401 without session; failed operations leave the board consistent
-- [ ] Live tests (marked `live`): a few (skipped without key) such as "add a card called X to Backlog" and "move card 1 to Done"
+- [x] First, check with a live call whether the free model supports structured outputs and note its rate limits and latency (about 40 s for a short answer in Part 8); if not, record it in docs and raise it with the user before building on it
+- [x] Define the response schema: `{ message: string, operations: Operation[] }` where an operation is one of `create_card`, `update_card`, `move_card`, `delete_card`, `rename_column` (discriminated union with explicit fields)
+- [x] `POST /api/chat` (requires a session via `current_user`, works on the signed-in user's board) takes `{ message, history }`; the server loads the user's board, sends system prompt + board JSON + history + question, parses the structured response
+- [x] Apply operations with the Part 6 functions in `board.py` in order (they raise `NotFoundError` for unknown ids); skip and report invalid operations (unknown ids); save the board; return `{ message, board, applied }`
+- [x] Prompt rules: columns are fixed; refer to cards by id; reply briefly
+- [x] Unit tests (mocked LLM): each operation type, multiple operations in one reply, no-op reply, invalid operation ids, malformed or non-JSON model output, LLM timeout/error returning a clean error, history passed through, board JSON included in the prompt
+- [x] Integration tests (`TestClient`, real SQLite, mocked LLM): chat request changes the stored board and a following `GET /api/board` reflects it; 401 without session; failed operations leave the board consistent
+- [x] Live tests (marked `live`): a few (skipped without key) such as "add a card called X to Backlog" and "move card 1 to Done"
+
+Result: 17 mocked chat tests plus 5 live tests (the 4 in `test_ai.py` before this, plus one through the whole `/api/chat` route with real model and real DB). Default run: 76 backend tests, 99% coverage (the one uncovered line is `ai.ask`, exercised by the live test). Structured outputs work on the free model (`response_format` json_schema; the discriminated-union schema from Pydantic was accepted), a reply takes roughly 5 to 20 s. Only the network function `ai.complete` is mocked in the default tests; parsing, validation and applying operations are real. Decisions: operations are applied one at a time on a copy of the board and validated, so an invalid one (unknown id, blank title) is skipped and reported in `skipped` while the rest still apply; the response is `{message, board, applied, skipped}`; any AI failure or unparsable reply is a 502 with a message and leaves the board untouched; no retries. Bug found by the live tests and fixed: when the free upstream is overloaded OpenRouter returns HTTP 200 with `choices: null` and an `error` body (503 "Service temporarily overloaded"), which crashed with a `TypeError`; `ai.complete` now raises `AIError` (regression test `test_complete_handles_openrouter_error_body`). Expect occasional overload errors from the free model, and occasional live-test flakes because the model is non-deterministic (one move-card live run failed once and passed 3 times after; cause not identified). The model sometimes says in `message` that it cannot do something while still returning the operation, so the prompt tells it to describe what it did.
 
 Success: with a live key, asking the AI to create, edit, move or delete cards changes the stored board; a plain question leaves the board unchanged.
 
 ## Part 10: Chat sidebar UI
 
-- [ ] `ChatSidebar` component: message list, input, send button, loading state, error state; uses the project colour scheme; history kept in React state only
-- [ ] Layout: board on the left, collapsible sidebar on the right, responsive
-- [ ] On a response with applied operations, replace the board state with the returned board so the UI refreshes automatically (`KanbanBoard` owns the board state, so the sidebar needs a way to set it)
-- [ ] Unit tests: Vitest for the sidebar (send, empty input blocked, loading, render reply, error display, history accumulates, board refresh callback) with mocked fetch
-- [ ] Integration tests: Playwright with the LLM stubbed at the server (env flag) covering chats that add, edit, move, delete a card and rename a column with the board updating without reload, a plain question leaving the board unchanged, and an AI error showing in the sidebar; one optional live e2e
-- [ ] Report coverage for frontend and backend (aim for about 80% where sensible)
-- [ ] Final full run of all unit, backend and e2e tests; Docker smoke test via start script; update all AGENTS.md files and keep the README minimal
+- [x] `ChatSidebar` component: message list, input, send button, loading state, error state; uses the project colour scheme; history kept in React state only
+- [x] Layout: board on the left, collapsible sidebar on the right, responsive
+- [x] On a response with applied operations, replace the board state with the returned board so the UI refreshes automatically (`KanbanBoard` owns the board state, so the sidebar needs a way to set it)
+- [x] Unit tests: Vitest for the sidebar (send, empty input blocked, loading, render reply, error display, history accumulates, board refresh callback) with mocked fetch
+- [x] Integration tests: Playwright with the LLM stubbed at the server (env flag) covering chats that add, edit, move, delete a card and rename a column with the board updating without reload, a plain question leaving the board unchanged, and an AI error showing in the sidebar; the optional live e2e was not added (live behaviour is covered by the backend live tests and a manual run in the container)
+- [x] Report coverage for frontend and backend (aim for about 80% where sensible)
+- [x] Final full run of all unit, backend and e2e tests; Docker smoke test via start script; update all AGENTS.md files and keep the README minimal
+
+Result: 39 Vitest tests pass (10 new for the sidebar; frontend coverage 91% statements, 92% branches; `ChatSidebar` 98%). 39 Playwright e2e tests pass (9 new in `tests/chat.spec.ts`: add, edit, move, delete, rename column, persistence after reload, plain question, AI error, hide/show). Backend: 77 tests, 99% coverage (the one uncovered line is `ai.ask`, covered by the live tests). Lint is clean. The Docker integration test passes, and the real container started with `scripts/start.ps1` (real key, no stub) answered a live `/api/chat` request by adding a card (removed afterwards; the `.sh` scripts remain untested here). Decisions: the e2e server runs with `AI_STUB=1` (`ai.stub_complete`): a message `STUB:{json}` makes the stubbed model reply with that JSON, a message containing "fail" raises an AI error, anything else gets a plain reply; the sidebar stays in view while scrolling: a sticky full-height column to the right of the board at `xl` (1280px) and wider, a floating bottom-right panel on narrower screens (the page wrapper must use `overflow-clip`; `overflow-hidden` silently breaks `position: sticky`), open by default; Hide animates it away completely (nothing left but a round AI button bottom-right, which reopens it) and the conversation is kept; the message box is an auto-growing textarea (up to 4 lines (108px), then it scrolls) where Enter sends and Shift+Enter adds a new line, and its conversation survives hiding; the board is replaced with the returned board only when operations were applied; skipped operations are mentioned in the assistant's message. To make room, the header "Focus" box shows only at `2xl` and a card's Edit and Remove buttons sit in a row that wraps below the text in narrow columns. Test fixes found on the way: the chat log's `aria-label` ("Chat messages") also matched label lookups for "Message" (renamed "Conversation"); `kanban.spec.ts` "does not add a card with a blank title" read its card count before the board had loaded and failed about 1 run in 8 (now waits for the board; 20 of 20 repeats pass).
 
 Success: user can chat in the sidebar, the AI can create, edit, move and delete cards and rename columns, and the board updates without a reload. Everything runs in the Docker container started by the scripts, and all tests pass.

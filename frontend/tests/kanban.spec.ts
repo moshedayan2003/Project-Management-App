@@ -75,7 +75,9 @@ test("deletes a card", async ({ page }) => {
 test("does not add a card with a blank title", async ({ page }) => {
   await page.goto("/");
   const firstColumn = page.locator('[data-testid^="column-"]').first();
-  const before = await firstColumn.locator('[data-testid^="card-"]').count();
+  // Wait for the board to load before counting.
+  await expect(firstColumn.locator('[data-testid^="card-"]')).toHaveCount(2);
+  const before = 2;
   await firstColumn.getByRole("button", { name: /add a card/i }).click();
   await firstColumn.getByPlaceholder("Card title").fill("   ");
   await firstColumn.getByRole("button", { name: /add card/i }).click();
