@@ -44,7 +44,7 @@ def wait_until_up():
 def test_container_serves_page_auth_and_persists_board():
     subprocess.run(["docker", "build", "-t", NAME, str(ROOT)], check=True)
     subprocess.run(["docker", "rm", "-f", NAME], capture_output=True)
-    subprocess.run(["docker", "run", "-d", "--name", NAME, "-p", f"{PORT}:8000", NAME], check=True)
+    subprocess.run(["docker", "run", "-d", "--name", NAME, "-p", f"127.0.0.1:{PORT}:8000", NAME], check=True)
     try:
         wait_until_up()
         assert "Kanban Studio" in urllib.request.urlopen(URL + "/").read().decode()

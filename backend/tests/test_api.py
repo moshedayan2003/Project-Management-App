@@ -1,6 +1,10 @@
+import threading
+import time
+
 import pytest
 
-from app.board import default_board
+from app import db
+from app.models.board import default_board
 
 
 def column_ids(board, column_id):
@@ -100,6 +104,30 @@ def test_move_card_errors(auth_client):
         auth_client.post("/api/cards/card-1/move", json={"column_id": "col-done", "position": -1}).status_code
         == 422
     )
+
+
+def test_overlapping_moves_are_both_saved(auth_client, monkeypatch):
+    # Regression: both requests loaded the same board and the second save discarded the first.
+    real_get_board = db.get_board
+
+    def slow_get_board(*args):
+        board = real_get_board(*args)
+        time.sleep(0.2)
+        return board
+
+    monkeypatch.setattr(db, "get_board", slow_get_board)
+
+    def move(card_id):
+        response = auth_client.post(f"/api/cards/{card_id}/move", json={"column_id": "col-done"})
+        assert response.status_code == 200
+
+    threads = [threading.Thread(target=move, args=(card_id,)) for card_id in ("card-1", "card-3")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    done = column_ids(auth_client.get("/api/board").json(), "col-done")
+    assert "card-1" in done and "card-3" in done
 
 
 def test_delete_card(auth_client):

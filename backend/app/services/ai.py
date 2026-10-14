@@ -1,17 +1,21 @@
 import json
 import os
-from pathlib import Path
+import time
 from typing import Annotated, Literal
 
 from dotenv import load_dotenv
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, Field, ValidationError
 
-from app.board import Board
+from app.config import ROOT_DIR
+from app.models.board import Board
 
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+load_dotenv(ROOT_DIR / ".env")
 
 MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+# The free model's provider often turns requests away as overloaded (503); a retry
+# a moment later usually works. Seconds to wait before each retry; other errors fail at once.
+OVERLOAD_RETRY_DELAYS = [1, 2]
 
 SYSTEM_PROMPT = """You are the assistant inside a Kanban project board app.
 The board is JSON: five fixed columns (id, title, cardIds) and a map of cards (id, title, details).
@@ -89,25 +93,32 @@ def stub_complete(messages: list[dict]) -> str:
 
 
 def complete(messages: list[dict], response_format: dict | None = None) -> str:
-    """One OpenRouter call; returns the reply text. The only function that touches the network."""
+    """OpenRouter call; returns the reply text. The only function that touches the network."""
     if os.environ.get("AI_STUB"):
         return stub_complete(messages)
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise AIError("AI request failed: OPENROUTER_API_KEY is not set")
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
-        api_key=os.environ["OPENROUTER_API_KEY"],
+        api_key=api_key,
         timeout=60,
         max_retries=0,
     )
     kwargs = {"response_format": response_format} if response_format else {}
-    try:
-        response = client.chat.completions.create(model=MODEL, messages=messages, **kwargs)
-    except OpenAIError as error:
-        raise AIError(f"AI request failed: {error}") from error
-    if not response.choices:
+    for delay in [*OVERLOAD_RETRY_DELAYS, None]:
+        try:
+            response = client.chat.completions.create(model=MODEL, messages=messages, **kwargs)
+        except OpenAIError as error:
+            raise AIError(f"AI request failed: {error}") from error
+        if response.choices:
+            return response.choices[0].message.content or ""
         # OpenRouter reports upstream failures (e.g. the free model overloaded) in a 200 body.
         error = getattr(response, "error", None)
-        raise AIError(f"AI request failed: {error or 'empty response'}")
-    return response.choices[0].message.content or ""
+        overloaded = isinstance(error, dict) and error.get("code") == 503
+        if delay is None or not overloaded:
+            raise AIError(f"AI request failed: {error or 'empty response'}")
+        time.sleep(delay)
 
 
 def ask(prompt: str) -> str:

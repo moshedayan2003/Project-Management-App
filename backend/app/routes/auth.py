@@ -1,5 +1,9 @@
-from fastapi import APIRouter, HTTPException, Request, Response
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
+
+from app.deps import current_user
 
 # MVP: a single hardcoded user.
 USERNAME = "user"
@@ -27,13 +31,6 @@ def logout(request: Request):
     return Response(status_code=204)
 
 
-def current_user(request: Request) -> str:
-    username = request.session.get("username")
-    if not username:
-        raise HTTPException(status_code=401, detail="Not signed in")
-    return username
-
-
 @router.get("/me")
-def me(request: Request):
-    return {"username": current_user(request)}
+def me(username: Annotated[str, Depends(current_user)]):
+    return {"username": username}

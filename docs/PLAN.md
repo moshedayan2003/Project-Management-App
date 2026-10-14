@@ -17,6 +17,9 @@ Check off items (`[x]`) as they are completed. Stop for user approval where a pa
 | 9 | AI with Kanban context and Structured Outputs | Done |
 | 10 | Chat sidebar UI | Done |
 | - | Full test run after Part 10 | Done |
+| - | Code review fixes (H1, M1, M2, L1, L2) | Done |
+| - | Backend package restructure | Done |
+| - | Retry when the AI provider is overloaded | Done |
 
 ## Contents
 
@@ -128,7 +131,7 @@ Applies to every part. A part is not done until its tests pass and coverage has 
 ## Target layout
 
 ```
-backend/     FastAPI app (app/main.py, auth.py, board.py, db.py, api.py, ai.py),
+backend/     FastAPI app (app/: main.py, config.py, db.py, deps.py, models/, services/, routes/),
              pyproject.toml (uv), tests/, data/ (SQLite, git-ignored)
 frontend/    Next.js app
 scripts/     start/stop for Mac, Linux, Windows
@@ -338,3 +341,53 @@ Checklist:
 
 - Results: backend 77 passed (99% coverage), live 5 passed, Docker 1 passed, Vitest 40 passed (Part 10 recorded 39), lint clean, Playwright 39 passed. The container started with `scripts/start.ps1` answered health, `/`, login and board requests and was stopped afterwards.
 - Test fixed: `drag-targets.spec.ts` "dropping on an empty Review column at +450px" failed 5 of 5 runs. Root cause, measured: the columns start at y=340, so the drop point (y=790) was below the 720px default viewport; dnd-kit auto-scrolled the page by 510px, which left the pointer below the 852px Review column, so `pointerWithin` found nothing and the `closestCorners` fallback chose `card-7` in Done. The Backlog variant passed only because its column was 1104px tall. A real pointer cannot be off-screen, so the test was at fault, not the app. Fix: the spec runs with a 1280x1200 viewport. After the fix, 45 of 45 repeated runs pass; with collision detection temporarily set back to plain `closestCorners`, all 9 drag tests fail, so they still guard against the Part 7 bug.
+
+## Code review fixes
+
+Review: [code_review.md](code_review.md). Actions 1 to 5 are done, each with a regression test that failed before the fix:
+
+- **H1:** chat no longer saves the board it loaded before the AI call.
+- **M1:** board writes are serialized by `UserBoard.update()`.
+- **M2:** the start scripts publish on `127.0.0.1` only.
+- **L1:** a missing API key gives 502.
+- **L2:** negative move positions are clamped.
+
+Results: backend 82 passed (99% coverage), live and Docker 6 passed, Playwright 39 passed.
+
+## Backend package restructure
+
+Decision (user): reorganize the flat `backend/app/` modules into packages. This was a pure move with no behaviour change; the entry point stays `app.main:app`.
+
+| Before | After |
+|--------|-------|
+| `main.py` (settings + app) | `config.py` (paths and env settings) + `main.py` (`create_app` only) |
+| `board.py` | `models/board.py` (model, rules, default board) + `services/board_ops.py` (operations, `NotFoundError`) |
+| `ai.py` | `services/ai.py` (loads `.env` via `config.ROOT_DIR` instead of counting parent folders) |
+| `auth.py` | `routes/auth.py` (routes) + `deps.py` (`current_user`) |
+| `api.py` | `routes/board.py` + `routes/chat.py` + `deps.py` (`UserBoard` and its write lock) |
+
+Tests changed only their imports. The live tests import inside each test, so the default run would not have caught those; they were found by searching and fixed.
+
+Results:
+
+| Suite | Result |
+|-------|--------|
+| Backend | 82 passed, 99% coverage (same as before the move) |
+| Live AI + Docker | 6 passed |
+| Vitest | 40 passed |
+| Lint | Clean |
+| Playwright | 39 passed |
+| Real container via `scripts/start.ps1` | Image contains the new layout; health, `/`, 401, login, board read and 404 all correct; no errors in the log; stopped afterwards |
+
+## Retry when the AI provider is overloaded
+
+- **Reported by the user:** the chat often failed on the first message and worked when sent again.
+- **Root cause, measured** against the live model on a temp DB: in 20 requests about 5 failed within 0.5 to 1.3 s with OpenRouter's "Upstream error from Nvidia: Service temporarily overloaded" (code 503, `provider_overloaded`, returned in an HTTP 200 body). The failures were random, not tied to the first message, and `ai.complete` had no retries (Part 8 decision).
+- **Decision (user, reverses the Part 8 "no retries" decision for this one case):** retry only on that overload, waiting 1 s then 2 s before up to two retries. Other errors still fail at once.
+- **Tests:** three added, using a fake SDK client:
+  - retries then succeeds (failed before the fix);
+  - gives up after two retries (failed before the fix);
+  - no retry for other errors.
+- **Results:** backend 85 passed (99% coverage), Playwright 39 passed, Docker 1 passed.
+- **Live check:** after the fix, 1 of 15 requests still failed, after three overloaded attempts in a row.
+- **Free-tier limit, also found:** the key is on OpenRouter's free tier, which allows 50 free-model requests per day (`X-RateLimit-Limit: 50`, reset 00:00 UTC). The day's testing used it up, so later requests got 429 "Rate limit exceeded: free-models-per-day". Retries are not used for 429. Adding 10 credits raises the limit to 1000 per day.

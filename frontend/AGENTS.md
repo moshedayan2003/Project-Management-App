@@ -84,7 +84,7 @@ Column ids are fixed (`col-backlog`, `col-discovery`, `col-progress`, `col-revie
 | File | Purpose |
 |------|---------|
 | `src/test/fetch.ts` | `stubFetch` (fake server for unit tests) and `callsTo` |
-| `src/test/fixtures.ts` | `defaultBoard`, a copy of the backend default board (also used by e2e). Keep it in sync with `board.default_board`. |
+| `src/test/fixtures.ts` | `defaultBoard`, a copy of the backend default board (also used by e2e). Keep it in sync with `default_board()` in `backend/app/models/board.py`. |
 | `tests/helpers.ts` | `signInWithFreshBoard`: signs in via the API and resets the saved board to `defaultBoard` |
 
 ### Unit tests (Vitest)

@@ -1,8 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from app import board as ops
-from app.board import COLUMN_IDS, Board, NotFoundError, default_board
+from app.models.board import COLUMN_IDS, Board, default_board
+from app.services import board_ops as ops
+from app.services.board_ops import NotFoundError
 
 
 def ids(board, column_id):
@@ -61,6 +62,12 @@ def test_move_card_defaults_to_end_and_clamps_position():
     assert ids(board, "col-done")[-1] == "card-1"
     board = ops.move_card(default_board(), "card-1", "col-review", 99)
     assert ids(board, "col-review") == ["card-6", "card-1"]
+
+
+def test_move_card_clamps_negative_position():
+    # Regression: the AI can send position -1, which list.insert put second from the end.
+    board = ops.move_card(default_board(), "card-1", "col-done", -1)
+    assert ids(board, "col-done") == ["card-1", "card-7", "card-8"]
 
 
 def test_move_card_within_column():

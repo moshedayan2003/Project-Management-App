@@ -1,9 +1,9 @@
 import sqlite3
 from contextlib import closing
 
-from app import board as ops
 from app import db
-from app.board import default_board
+from app.models.board import default_board
+from app.services import board_ops as ops
 
 
 def test_creates_missing_file_with_user_and_default_board(tmp_path):

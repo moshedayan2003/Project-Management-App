@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.board import Board, default_board
+from app.models.board import Board, default_board
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (

@@ -10,13 +10,15 @@ Before changing an area, read its detail file and update it when the structure c
 
 - Next.js 16 static export (`output: "export"`, built to `frontend/out`) is served at `/` by FastAPI, which also serves `/api/*`. No Next server features (no API routes, no rewrites, no SSR).
 - A board is one JSON document per user with exactly 5 fixed column ids (`col-backlog`, `col-discovery`, `col-progress`, `col-review`, `col-done`); only titles change. Every mutating route returns the full updated board. The server assigns card ids.
-- Card operations are pure functions in `backend/app/board.py`, shared by the REST routes and `POST /api/chat`.
+- Backend layout (`backend/app/`): `models/` (pydantic board model and rules), `services/` (pure `board_ops`, `ai`), `routes/` (`auth`, `board`, `chat`), plus `config.py`, `db.py`, `deps.py` and `main.py`. Routes depend on deps and services; services depend on models; models depend on nothing in the app.
+- Card operations are pure functions in `app/services/board_ops.py`, shared by the REST routes and `POST /api/chat`.
+- Every board write goes through `UserBoard.update(change)` in `app/deps.py` (load, change, validate, save under one lock). Never load and save separately, and never hold the lock during the AI call.
 - `POST /api/chat` applies the model's operations one by one to a copy of the board, skipping invalid ones; AI failure returns 502. Chat history lives in the browser only.
-- `ai.complete` is the only function that touches the network. It is the only thing tests may mock.
+- `app.services.ai.complete` is the only function that touches the network. It is the only thing tests may mock.
 
 ## Environment
 
-- `OPENROUTER_API_KEY` in the root `.env` (git-ignored). `ai.py` loads that file itself.
+- `OPENROUTER_API_KEY` in the root `.env` (git-ignored). `app/services/ai.py` loads that file itself. Other settings are read once in `app/config.py`.
 - `STATIC_DIR` defaults to `backend/static`, which only exists in Docker. Importing `app.main` locally fails unless it is set (e.g. `STATIC_DIR=../frontend/out`).
 - Optional: `DB_PATH` (default `backend/data/pm.db`), `SESSION_SECRET`, `AI_STUB` (any value: offline stub model; `STUB:{json}` in the message becomes the reply, a message containing "fail" raises).
 
@@ -32,12 +34,12 @@ Before changing an area, read its detail file and update it when the structure c
 - Every bug fix gets a regression test that fails before the fix.
 - Mock only `ai.complete`. Use a real temporary SQLite file per test.
 - Coverage target about 80% where sensible, not a gate. No low-value tests just to reach it.
-- Keep live AI tests few and out of the default run: the free model is slow, rate-limited, and sometimes returns HTTP 200 with an error body.
+- Keep live AI tests few and out of the default run: the free model is slow and sometimes returns HTTP 200 with an error body (overload is retried twice). Without OpenRouter credits the key allows only 50 free-model requests per day (reset 00:00 UTC); one full live run uses 5 or more, so do not loop live calls.
 
 ## Gotchas
 
 - Windows: `uv` is not on PATH. Add `C:\Users\moshe\AppData\Roaming\Python\Python314\Scripts` per session or use `python -m uv`. `npm run test:e2e` needs `uv` on PATH.
-- `frontend/src/test/fixtures.ts` copies the backend `board.default_board`; keep them in sync.
+- `frontend/src/test/fixtures.ts` copies the backend `default_board()` in `app/models/board.py`; keep them in sync.
 - The `KanbanBoard` page wrapper must use `overflow-clip`, not `overflow-hidden`, or the sticky chat sidebar breaks.
 - Drag collision detection is `pointerWithin` falling back to `closestCorners`; plain `closestCorners` drops cards in the wrong column when the target is empty.
 - Playwright tests share one user and board: keep `workers: 1`.

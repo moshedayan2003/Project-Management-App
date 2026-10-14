@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import pytest
 from openai import APIConnectionError
 
-from app import ai
-from app.board import default_board
+from app.models.board import default_board
+from app.services import ai
 
 
 @pytest.fixture
@@ -80,6 +80,33 @@ def test_plain_reply_leaves_board_unchanged(auth_client, llm):
     data = chat(auth_client).json()
     assert data["applied"] == [] and data["skipped"] == []
     assert data["board"] == default_board().model_dump()
+
+
+def change_board_while_thinking(monkeypatch, client, reply):
+    """The user moves card-1 to Done while the model is working on its reply."""
+
+    def fake_complete(messages, response_format=None):
+        assert client.post("/api/cards/card-1/move", json={"column_id": "col-done"}).status_code == 200
+        return json.dumps(reply)
+
+    monkeypatch.setattr(ai, "complete", fake_complete)
+
+
+def test_plain_reply_keeps_changes_made_while_thinking(auth_client, monkeypatch):
+    # Regression: chat saved the board it loaded before the AI call, reverting the move.
+    change_board_while_thinking(monkeypatch, auth_client, {"message": "Hi.", "operations": []})
+    data = chat(auth_client).json()
+    assert "card-1" in column(data["board"], "col-done")["cardIds"]
+    assert "card-1" in column(board_of(auth_client), "col-done")["cardIds"]
+
+
+def test_operations_apply_to_the_latest_board(auth_client, monkeypatch):
+    change_board_while_thinking(monkeypatch, auth_client, {"message": "Renamed.", "operations": [
+        {"type": "rename_column", "column_id": "col-review", "title": "QA"}]})
+    board = chat(auth_client).json()["board"]
+    assert "card-1" in column(board, "col-done")["cardIds"]
+    assert column(board, "col-review")["title"] == "QA"
+    assert board_of(auth_client) == board
 
 
 # --- invalid operations are skipped and the board stays consistent
@@ -178,6 +205,64 @@ def test_complete_turns_sdk_errors_into_aierror(monkeypatch):
     monkeypatch.setattr(ai, "OpenAI", lambda **kw: FakeOpenAI(error=error))
     with pytest.raises(ai.AIError):
         ai.complete([])
+
+
+OVERLOADED = SimpleNamespace(
+    choices=None,
+    error={"message": "Upstream error from Nvidia: Service temporarily overloaded", "code": 503,
+           "metadata": {"error_type": "provider_overloaded"}},
+)
+ANSWER = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="hi"))])
+
+
+@pytest.fixture
+def openrouter(monkeypatch):
+    """Fake SDK client that returns the queued responses in order; records the retry pauses."""
+    state = SimpleNamespace(responses=[], calls=0, sleeps=[])
+
+    def create(**kwargs):
+        state.calls += 1
+        return state.responses.pop(0)
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.delenv("AI_STUB", raising=False)
+    monkeypatch.setattr(ai, "OpenAI", lambda **kw: SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    monkeypatch.setattr(ai.time, "sleep", state.sleeps.append)
+    return state
+
+
+def test_complete_retries_when_the_provider_is_overloaded(openrouter):
+    # Regression: the free model's provider often answers 503 "overloaded" in a 200 body;
+    # without a retry the user had to send every such message twice.
+    openrouter.responses = [OVERLOADED, ANSWER]
+    assert ai.complete([]) == "hi"
+    assert openrouter.calls == 2
+    assert openrouter.sleeps == [1]
+
+
+def test_complete_gives_up_after_two_retries(openrouter):
+    openrouter.responses = [OVERLOADED, OVERLOADED, OVERLOADED]
+    with pytest.raises(ai.AIError, match="overloaded"):
+        ai.complete([])
+    assert openrouter.calls == 3
+    assert openrouter.sleeps == [1, 2]
+
+
+def test_complete_does_not_retry_other_errors(openrouter):
+    openrouter.responses = [SimpleNamespace(choices=None, error={"message": "Bad request", "code": 400})]
+    with pytest.raises(ai.AIError, match="Bad request"):
+        ai.complete([])
+    assert openrouter.calls == 1
+
+
+def test_missing_api_key_is_a_clean_502(auth_client, monkeypatch):
+    # Regression: os.environ["OPENROUTER_API_KEY"] raised KeyError, an unhandled 500.
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("AI_STUB", raising=False)
+    with pytest.raises(ai.AIError):
+        ai.complete([])
+    assert chat(auth_client).status_code == 502
 
 
 def test_complete_handles_openrouter_error_body(monkeypatch):

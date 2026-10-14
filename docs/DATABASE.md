@@ -1,6 +1,6 @@
 # Database
 
-**Status:** approved and implemented in `backend/app/db.py` and `backend/app/board.py`.
+**Status:** approved and implemented in `backend/app/db.py` (storage) and `backend/app/models/board.py` (board model and rules).
 **Schema file:** [db-schema.json](db-schema.json) (machine-readable).
 
 ## Summary

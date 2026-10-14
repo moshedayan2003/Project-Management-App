@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from app.ai import ask
+from app.services.ai import ask
 
 
 @pytest.mark.live
@@ -14,8 +14,8 @@ def test_live_answer():
 @pytest.mark.live
 @pytest.mark.skipif(not os.environ.get("OPENROUTER_API_KEY"), reason="no OPENROUTER_API_KEY")
 def test_live_chat_create_card():
-    from app.ai import chat
-    from app.board import default_board
+    from app.models.board import default_board
+    from app.services.ai import chat
 
     reply = chat(default_board(), [], "Add a card called Write docs to the Backlog column.")
     assert any(
@@ -27,8 +27,8 @@ def test_live_chat_create_card():
 @pytest.mark.live
 @pytest.mark.skipif(not os.environ.get("OPENROUTER_API_KEY"), reason="no OPENROUTER_API_KEY")
 def test_live_chat_move_card():
-    from app.ai import chat
-    from app.board import default_board
+    from app.models.board import default_board
+    from app.services.ai import chat
 
     reply = chat(default_board(), [], "Move card-1 to the Done column.")
     assert any(
@@ -40,8 +40,8 @@ def test_live_chat_move_card():
 @pytest.mark.live
 @pytest.mark.skipif(not os.environ.get("OPENROUTER_API_KEY"), reason="no OPENROUTER_API_KEY")
 def test_live_chat_question_changes_nothing():
-    from app.ai import chat
-    from app.board import default_board
+    from app.models.board import default_board
+    from app.services.ai import chat
 
     reply = chat(default_board(), [], "How many cards are on the board? Do not change anything.")
     assert reply.operations == []
