@@ -1,53 +1,55 @@
-# The Project Management MVP web app
+# Project Management MVP Web App
 
-## Business Requirements
+## Business requirements
 
-This project is building a Project Management App. Key features:
-- A user can sign in
-- When signed in, the user sees a Kanban board representing their project
-- The Kanban board has fixed columns that can be renamed
-- The cards on the Kanban board can be moved with drag and drop, and edited
-- There is an AI chat feature in a sidebar; the AI is able to create / edit / move one or more cards
+A project management app with these features:
 
-## Limitations
+- A user can sign in.
+- When signed in, the user sees a Kanban board representing their project.
+- The Kanban board has fixed columns that can be renamed.
+- Cards on the board can be moved with drag and drop, and edited.
+- An AI chat sidebar can create, edit and move one or more cards.
 
-For the MVP, there will only be a user sign in (hardcoded to 'user' and 'password') but the database will support multiple users for future.
+## Limitations (MVP)
 
-For the MVP, there will only be 1 Kanban board per signed in user.
+- Sign in is hardcoded to `user` / `password`, but the database supports multiple users for the future.
+- One Kanban board per signed-in user.
+- Runs locally, in a Docker container.
 
-For the MVP, this will run locally (in a docker container)
+## Technical decisions
 
-## Technical Decisions
+| Area | Decision |
+|------|----------|
+| Frontend | Next.js |
+| Backend | Python FastAPI, which also serves the static Next.js site at `/` |
+| Packaging | Everything in one Docker container |
+| Python packages | `uv`, also inside the Docker container |
+| AI | OpenRouter, key `OPENROUTER_API_KEY` in `.env` in the project root |
+| AI model | `nvidia/nemotron-3-ultra-550b-a55b:free` |
+| Database | SQLite, local file, created if it does not exist |
+| Scripts | Start and stop scripts for Mac, PC and Linux in `scripts/` |
 
-- NextJS frontend
-- Python FastAPI backend, including serving the static NextJS site at /
-- Everything packaged into a Docker container
-- Use "uv" as the package manager for python in the Docker container
-- Use OpenRouter for the AI calls. An OPENROUTER_API_KEY is in .env in the project root
-- Use `nvidia/nemotron-3-ultra-550b-a55b:free` as the model
-- Use SQLLite local database for the database, creating a new db if it doesn't exist
-- Start and Stop server scripts for Mac, PC, Linux in scripts/
+## Starting point
 
-## Starting Point
+A working frontend-only demo was already in `frontend/`. It was not yet designed for the Docker setup.
 
-A working MVP of the frontend has been built and is already in frontend. This is not yet designed for the Docker setup. It's a pure frontend-only demo.
+## Color scheme
 
-## Color Scheme
-
-- Accent Yellow: `#ecad0a` - accent lines, highlights
-- Blue Primary: `#209dd7` - links, key sections
-- Purple Secondary: `#753991` - submit buttons, important actions
-- Dark Navy: `#032147` - main headings
-- Gray Text: `#888888` - supporting text, labels
+| Name | Hex | Use |
+|------|-----|-----|
+| Accent Yellow | `#ecad0a` | Accent lines, highlights |
+| Blue Primary | `#209dd7` | Links, key sections |
+| Purple Secondary | `#753991` | Submit buttons, important actions |
+| Dark Navy | `#032147` | Main headings |
+| Gray Text | `#888888` | Supporting text, labels |
 
 ## Coding standards
 
-1. Use latest versions of libraries and idiomatic approaches as of today
-2. Keep it simple - NEVER over-engineer, ALWAYS simplify, NO unnecessary defensive programming. No extra features - focus on simplicity.
-3. Be concise. Keep README minimal. IMPORTANT: no emojis ever
-4. When hitting issues, always identify root cause before trying a fix. Do not guess. Prove with evidence, then fix the root cause.
+1. Use the latest versions of libraries and idiomatic approaches as of today.
+2. Keep it simple. NEVER over-engineer, ALWAYS simplify, NO unnecessary defensive programming. No extra features.
+3. Be concise. Keep the README minimal. IMPORTANT: no emojis, ever.
+4. When hitting issues, always identify the root cause before trying a fix. Do not guess. Prove it with evidence, then fix the root cause.
 
 ## Working documentation
 
-All documents for planning and executing this project will be in the docs/ directory.
-Please review the docs/PLAN.md document before proceeding.
+All planning and execution documents live in `docs/`. Review `docs/PLAN.md` before proceeding.

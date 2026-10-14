@@ -5,6 +5,10 @@ import { defaultBoard } from "../src/test/fixtures";
 // Regression: the card must land in the column the pointer is released over,
 // even when that column is empty and its neighbours have cards.
 
+// Columns start about 340px down, so the +450px drop is below a 720px-high viewport. There
+// dnd-kit auto-scrolls the page and the pointer ends up under the column, not in it.
+test.use({ viewport: { width: 1280, height: 1200 } });
+
 type Layout = Record<string, string[]>;
 
 const putLayout = async (page: Page, layout: Layout) => {
