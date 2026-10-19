@@ -88,9 +88,14 @@ test("the sidebar hides completely into the AI button and comes back", async ({ 
   await page.getByRole("button", { name: "Hide" }).click();
   await expect(sidebar).toBeHidden();
   await expect(showButton).toBeVisible();
-  // The board gets the space back.
-  const board = await page.getByTestId("column-col-done").boundingBox();
-  expect(board!.x + board!.width).toBeGreaterThan(1000);
+  // The board gets the space back once the 300ms slide ends.
+  const doneColumn = page.getByTestId("column-col-done");
+  await expect
+    .poll(async () => {
+      const box = await doneColumn.boundingBox();
+      return box!.x + box!.width;
+    })
+    .toBeGreaterThan(1000);
 
   await showButton.click();
   await expect(sidebar).toBeVisible();

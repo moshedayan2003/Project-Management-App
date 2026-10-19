@@ -1,229 +1,146 @@
 # Code Review
 
-**Date:** 2026-10-14
-**Scope:** the whole repo at commit `151f3ff` plus the current working tree: backend (`backend/app`, tests), frontend (`frontend/src`, e2e tests, configs), `Dockerfile`, `scripts/`, docs.
-**Note:** file paths below refer to the layout at review time. The backend has since been reorganized into packages (see "Backend package restructure" in `PLAN.md`): `api.py` is now `routes/board.py`, `routes/chat.py` and `deps.py`; `board.py` is `models/board.py` and `services/board_ops.py`; `ai.py` is `services/ai.py`.
-**Method:** read every source file. Findings marked "confirmed" were reproduced with a throwaway script against temporary databases (only `ai.complete` replaced), not inferred.
+**Date:** 2026-10-15
+**Scope:** the whole repo at commit `8572ad6` plus the uncommitted package upgrade (Next.js 16.4.1, React 19.3.1, Vitest 5, Node 24 in Docker, the `chat.spec.ts` timing fix).
+**Method:** read every source file, config and script. Findings marked "confirmed" were reproduced with a throwaway script against a temporary database (only `ai.complete` replaced). The rest are from reading the code.
+**Previous review:** 2026-10-14 (in git history). Its five fixed findings are still fixed. Its five open findings are still open and listed again below.
 
 ## Summary
 
-The codebase is small, readable and well tested (77 backend tests at 99% coverage, 40 unit tests, 39 e2e tests, all passing). Board rules are enforced on every save, all SQL is parameterized, and React escapes all rendered text. No `dangerouslySetInnerHTML` is used.
+The code is small, clear and well layered. Every board write is locked and validated, all SQL is parameterized, and React escapes all text. All tests pass:
 
-The main problems are two ways a user's change can be **silently lost**:
+| Suite | Result |
+|-------|--------|
+| Backend (pytest) | 85 passed, 99% coverage |
+| Frontend unit (Vitest 5) | 40 passed |
+| End-to-end (Playwright) | 39 passed |
+| Lint | clean |
 
-- The chat route saves a board it loaded before the AI call.
-- Board writes from overlapping requests are not serialized.
+The uncommitted package upgrade looks correct. The test setup import and the polling fix in `chat.spec.ts` are the right changes for Vitest 5 and the newer Playwright.
 
-In both cases the UI keeps showing the change, so the user does not notice until they reload.
+There are no high-severity problems. The main new finding is that one bad operation from the AI throws away the whole reply.
 
 | ID | Severity | Area | Finding | Status |
 |----|----------|------|---------|--------|
-| H1 | High | Backend chat | Chat saves a stale board, reverting changes made while the AI was thinking | Fixed |
-| M1 | Medium | Backend API | Overlapping writes lose updates (last write wins) | Fixed |
-| M2 | Medium | Docker / auth | App is published on all network interfaces with known credentials and a public default session secret | Fixed |
-| L1 | Low | Backend AI | Missing `OPENROUTER_API_KEY` gives 500, not the documented 502 | Fixed |
-| L2 | Low | Backend board | AI `move_card` accepts a negative position | Fixed |
-| L3 | Low | Frontend auth | A network error during login is unhandled; no message shown | From code |
-| L4 | Low | Frontend a11y | Cards cannot be moved with the keyboard; card is a `role="button"` containing buttons | From code |
-| L5 | Low | Frontend | Column rename sends a PATCH on every blur, even when unchanged | From code |
-| L6 | Low | Backend | Chat message and history sizes are unbounded | From code |
-| L7 | Low | Tooling | Tests run on Python 3.14 locally, but the image uses 3.12; `uv:latest` is unpinned | From code |
+| M1 | Medium | Backend chat | One malformed AI operation discards the whole reply (502) | Confirmed, new |
+| L1 | Low | Frontend auth | A network error during login shows no message | Open since last review |
+| L2 | Low | Frontend | Column rename saves on every blur, even when unchanged | Open since last review |
+| L3 | Low | Frontend a11y | Cards cannot be moved with the keyboard; card is a button that contains buttons | Open since last review |
+| L4 | Low | Backend | Chat message and history sizes are unbounded | Open since last review |
+| L5 | Low | Tooling | Python 3.14 locally vs 3.12 in Docker; `uv:latest` is unpinned | Open since last review |
+| L6 | Low | Tests | Playwright reuses any server already on port 3000 | New |
+| L7 | Low | Repo | `frontend/test-results/.last-run.json` is committed although ignored | New |
 
 ---
 
-## High
-
-### H1. Chat saves a stale board and reverts the user's changes
-
-**Where:** `backend/app/api.py`, `chat()`.
-
-**Problem:**
-
-- `chat()` loads the board, then waits for the model, which takes 5 to 40 s on the free model.
-- It then applies the operations to that old copy and always saves it.
-- Any change the user makes in the meantime is overwritten. The sidebar does not block the board, so this is easy to hit: drag a card while the assistant is "Thinking".
-- When the reply has no operations, the frontend does not refresh (`ChatSidebar` only calls `onBoardChange` when `applied` is non-empty). The screen keeps showing the user's change, but the server has reverted it.
-
-**Evidence (confirmed):**
-
-- The mocked model moved `card-1` to Done through the API while "thinking", then replied with no operations.
-- After the chat returned 200, `card-1` was saved back in Backlog.
-
-**Action:**
-
-1. In `chat()`, load the board *after* `ai.chat(...)` returns. Use the pre-call board only for the prompt.
-2. Save only when at least one operation was applied; otherwise return the current board unchanged.
-3. Add a regression test in `tests/test_chat.py` that changes the board inside the mocked `ai.complete` and asserts the change survives. It must fail before the fix.
-
 ## Medium
 
-### M1. Overlapping writes lose updates
+### M1. One malformed AI operation throws away the whole reply
 
-**Where:** `backend/app/api.py`, `UserBoard.load()` / `save()`.
-
-**Problem:**
-
-- Every mutating route does load, then modify, then save, with no lock or transaction around the sequence.
-- FastAPI runs these sync handlers in a thread pool, so two requests can both load the same board, and the second save discards the first.
-- The frontend sends saves without waiting (drag, then rename, then edit in quick succession) and ignores the returned board for moves, edits and deletes. So the UI shows both changes while only one is stored.
-- The window is a few milliseconds per request, so it is rare in normal use. When it does happen, data is lost silently.
-
-**Evidence (confirmed):**
-
-- With `db.get_board` slowed by 0.3 s, two concurrent moves (`card-1` and `card-3` to Done) both returned 200.
-- Only `card-3` was saved; `card-1` stayed in Backlog.
-
-**Action:**
-
-1. Serialize load-modify-save, keeping the slow AI call outside the critical section. The simplest fit for a single-process local app is a module-level `threading.Lock` held from `load()` through `save()`. An alternative is to do the read and write in one SQLite `BEGIN IMMEDIATE` transaction.
-2. Add a threaded regression test like the evidence above.
-
-### M2. App is reachable from the network with known credentials and secret
-
-**Where:** `scripts/start.sh`, `scripts/start.ps1`, `backend/app/main.py`.
+**Where:** `backend/app/services/ai.py`, `Reply` and `chat()`; `backend/app/routes/chat.py`.
 
 **Problem:**
 
-- `docker run -p 8000:8000` publishes on `0.0.0.0` (seen in `docker ps`: `0.0.0.0:8000->8000/tcp`), so anyone on the same network can open the app.
-- The login is `user` / `password`.
-- `SESSION_SECRET` defaults to `dev-only-secret-change-me`, which is public in the repo, and neither the Dockerfile nor the scripts set it. Unless `.env` sets it, anyone can forge a valid session cookie without logging in.
-- Anyone who gets in can also spend the OpenRouter key's quota through `/api/chat`.
+- `Reply.operations` is a strict list of typed operations, so the whole reply is validated at once.
+- If the model gets just one operation wrong (for example a `move_card` without `column_id`), validation fails and the user gets a 502 error.
+- The valid operations and the model's message are lost too. The plan says invalid operations should be skipped and reported, and the route already does that for unknown ids, but not for badly formed operations.
+- The free model is not very reliable, so this is likely to happen in real use.
 
-The hardcoded login is an accepted MVP limitation. Exposing it beyond localhost is not.
+**Evidence (confirmed):** a mocked reply with one valid `create_card` and one `move_card` missing `column_id` returned `502 {"detail": "AI returned an invalid reply"}`. Nothing was applied.
 
 **Action:**
 
-1. Publish on localhost only: `-p 127.0.0.1:8000:8000` in both start scripts. This is a one-line change each and makes the other two points local-only.
-2. Optionally, add `SESSION_SECRET=` to the README's `.env` instructions.
+1. Keep the strict schema in the `response_format` sent to the model, but parse `operations` loosely (a list of plain objects).
+2. In `apply_all`, validate each operation on its own (for example with a `TypeAdapter(ai.Operation)`) and add failures to `skipped`, the same way unknown ids are handled.
+3. Add a regression test in `tests/test_chat.py` with one valid and one malformed operation. It must fail before the fix.
 
 ## Low
 
-### L1. Missing API key returns 500 instead of 502
+### L1. Login network error shows nothing
 
-**Where:** `backend/app/ai.py`, `complete()`.
+**Where:** `frontend/src/components/AuthGate.tsx`, `handleLogin`; `LoginForm.tsx`, `handleSubmit`.
 
-**Problem:** `os.environ["OPENROUTER_API_KEY"]` is read outside the `try`, so a missing key raises `KeyError`, giving an unhandled 500. The docs say any AI failure is a 502. Users see the same generic sidebar error either way, but the server logs a traceback instead of a clean error.
+**Problem:** if the server cannot be reached, `fetch("/api/login")` rejects. The error escapes `handleSubmit`, no message is shown, and the console logs an unhandled rejection.
 
-**Evidence (confirmed):** `/api/chat` with the key removed from the environment returned 500.
+**Action:** catch it in `LoginForm.handleSubmit` and show "Could not reach the server." Add a Vitest case.
 
-**Action:** Build the client inside the `try` (`OpenAI(...)` raises `OpenAIError` when the key is missing), or use `os.environ.get` and raise `AIError`. Add a test.
+### L2. Column rename saves on every blur
 
-### L2. AI can move a card to a negative position
+**Where:** `frontend/src/components/KanbanColumn.tsx`, line 49.
 
-**Where:** `backend/app/board.py`, `move_card()`; `backend/app/ai.py`, `MoveCard`.
+**Problem:** clicking into a column title and out again sends a PATCH even when nothing changed. Harmless, but it is an extra write each time.
 
-**Problem:**
+**Action:** skip the save when the title is the same as when the input got focus.
 
-- The REST route validates `position >= 0`, but `ai.MoveCard.position` has no bound.
-- `list.insert(-1, ...)` puts the card second from the end instead of rejecting or clamping it.
-
-**Evidence (confirmed):** an AI `move_card` with `position: -1` into Done gave `['card-7', 'card-1', 'card-8']`.
-
-**Action:** Clamp in `board.move_card` (`position = max(0, position)`), which covers both callers, or add `Field(ge=0)` to `ai.MoveCard.position`. Add a test.
-
-### L3. Login network error is unhandled
-
-**Where:** `frontend/src/components/AuthGate.tsx`, `handleLogin`; `LoginForm.tsx`.
-
-**Problem:** if `fetch("/api/login")` rejects (server down), the promise rejection escapes `handleSubmit`. No error is shown and the console gets an unhandled rejection.
-
-**Action:** Catch the failure in `LoginForm.handleSubmit` and show "Could not reach the server." Add a Vitest case.
-
-### L4. Keyboard and screen-reader access to cards
+### L3. Keyboard and screen-reader access to cards
 
 **Where:** `frontend/src/components/KanbanBoard.tsx`, `KanbanCard.tsx`.
 
 **Problem:**
 
 - Only `PointerSensor` is registered, so cards cannot be moved with the keyboard.
-- The sortable `attributes` give the `<article>` `role="button"`, so each card is announced as a button containing the Edit and Remove buttons. The e2e page snapshot shows this nesting.
+- The drag `attributes` make each `<article>` a `role="button"`, which contains the Edit and Remove buttons. Screen readers announce a button inside a button.
 
-**Action (optional for the MVP):**
+**Action (optional for the MVP):** add `KeyboardSensor` with `sortableKeyboardCoordinates`, and consider a small drag handle so the card itself is not a button.
 
-1. Add `KeyboardSensor` with `sortableKeyboardCoordinates`.
-2. Consider a drag handle, so the card itself is not a button.
+### L4. Unbounded chat input
 
-### L5. Column rename saves on every blur
+**Where:** `backend/app/routes/chat.py`, `ChatRequest`; `backend/app/services/ai.py`, `ChatMessage`.
 
-**Where:** `frontend/src/components/KanbanColumn.tsx`.
+**Problem:** `message` and `history` have no size limit. A long chat sends more and more history to the free model, which gets slower and can go over its context limit.
 
-**Problem:** `onBlur` always calls `onRenameCommit`, so clicking into a title and out again sends a PATCH with no change. This is harmless, but it is an extra write that also widens the M1 window.
+**Action (optional):** cap `message` length and send only the last N history messages.
 
-**Action:** Skip the commit when the title equals the title at focus time.
+### L5. Toolchain drift
 
-### L6. Unbounded chat input
-
-**Where:** `backend/app/api.py`, `ChatRequest`; `backend/app/ai.py`, `ChatMessage`.
-
-**Problem:** `message` and `history` have no maximum size. A long session sends an ever-growing history to the free model, which gets slower and eventually exceeds its context limit.
-
-**Action (optional):** Cap `message` length (for example `max_length=4000`), and send only the last N history messages.
-
-### L7. Toolchain drift
-
-**Where:** `backend/.venv`, `Dockerfile`.
+**Where:** `backend/`, `Dockerfile` line 9.
 
 **Problem:**
 
-- Local tests run on Python 3.14.2, but the image runs 3.12, so the 3.12 code path is only exercised by the Docker test.
-- `COPY --from=ghcr.io/astral-sh/uv:latest` makes builds non-reproducible.
-- The container runs as root. This is acceptable for a local MVP.
+- Tests run on Python 3.14 locally, but the image uses 3.12. Only the Docker test runs the code on 3.12.
+- `ghcr.io/astral-sh/uv:latest` can change between builds.
+- Node is now aligned (24 both locally and in Docker).
 
-**Action (optional):**
+**Action (optional):** add `backend/.python-version` with `3.12`, and pin the uv image tag.
 
-1. Add `backend/.python-version` with `3.12` so `uv` uses the same version locally.
-2. Pin the uv image tag.
+### L6. Playwright reuses whatever is on port 3000
+
+**Where:** `frontend/playwright.config.ts`, `reuseExistingServer: true`.
+
+**Problem:** if a server is already running on port 3000, Playwright uses it instead of starting its own. If that server was started without `AI_STUB` or with the real `DB_PATH`, the chat tests call the real model (using up the 50 free requests per day), and the test helper replaces that database's board with the demo board.
+
+**Action:** set `reuseExistingServer: false`, so the tests always start their own server with the stub and the temporary database.
+
+### L7. Test output file is committed
+
+**Where:** `frontend/test-results/.last-run.json`.
+
+**Problem:** `frontend/.gitignore` ignores `/test-results/`, but this file was committed before that rule was added, so git still tracks it.
+
+**Action:** remove it from git with `git rm --cached frontend/test-results/.last-run.json` (the user does git operations).
 
 ---
 
 ## What is good
 
-- **Simple, layered design:** pure board operations (`board.py`) reused by both REST and AI, one JSON shape everywhere, one network function (`ai.complete`).
-- **Validation:** the `Board` model rejects any inconsistent board before it is stored, and AI operations are applied one at a time on a copy, so a bad operation is skipped rather than corrupting data.
-- **Error handling where it matters:** OpenRouter's 200-with-error body, malformed model output, and 401 anywhere in the UI returning to the login form.
-- **Tests:**
-  - They mock only the external service and use real temporary SQLite files.
-  - The Part 7 drag regression is still caught: all 9 drag tests fail against plain `closestCorners`.
-  - E2E tests run against the real server.
-- **Security basics:** parameterized SQL only, HttpOnly SameSite=Lax cookies, every board query scoped to the session user, `.env` git-ignored and docker-ignored.
+- **Clear layers:** models, pure board operations, routes. The same operations serve the REST routes and the AI.
+- **Safe writes:** every change goes through `UserBoard.update()`, which loads, changes, validates and saves under one lock. The slow AI call happens outside the lock and its operations are applied to the latest board.
+- **Strong validation:** the `Board` model rejects any inconsistent board. AI operations are applied one at a time on a copy, so a bad operation never leaves the board half changed.
+- **Error handling where it matters:** missing API key, OpenRouter's 200-with-error body, overload retries, and 401 anywhere in the UI returning to the login form.
+- **Tests:** real temporary SQLite files, only `ai.complete` mocked, end-to-end tests against the real server with a stub model.
+- **Security basics:** parameterized SQL, HttpOnly SameSite=Lax cookies, every query scoped to the signed-in user, `.env` excluded from git and Docker, container published on `127.0.0.1` only.
 
 ## Actions, in order
 
 | # | Action | Finding | Effort |
 |---|--------|---------|--------|
-| 1 | Done: apply the chat's operations to the board as it is after the AI call (via the locked `update()`, so no stale save); regression tests added | H1 | Small |
-| 2 | Done: serialize load-modify-save with a lock (AI call outside it); threaded regression test added | M1 | Small |
-| 3 | Done: publish the container on `127.0.0.1:8000` only, in both start scripts | M2 | Trivial |
-| 4 | Done: turn a missing API key into `AIError` (502); test added | L1 | Trivial |
-| 5 | Done: clamp negative positions in `board.move_card`; test added | L2 | Trivial |
-| 6 | Show an error when the login request cannot reach the server; add a test | L3 | Small |
-| 7 | Skip the rename PATCH when the title is unchanged | L5 | Trivial |
-| 8 | Optional: keyboard drag support and a drag handle | L4 | Medium |
-| 9 | Optional: cap chat message and history size | L6 | Small |
-| 10 | Optional: `.python-version` 3.12 and a pinned uv image | L7 | Trivial |
+| 1 | Validate AI operations one by one and skip bad ones; add a regression test | M1 | Small |
+| 2 | Show an error when login cannot reach the server; add a test | L1 | Small |
+| 3 | Set `reuseExistingServer: false` in the Playwright config | L6 | Trivial |
+| 4 | Remove `.last-run.json` from git | L7 | Trivial |
+| 5 | Skip the rename save when the title is unchanged | L2 | Trivial |
+| 6 | Optional: keyboard drag and a drag handle | L3 | Medium |
+| 7 | Optional: cap chat message and history size | L4 | Small |
+| 8 | Optional: `.python-version` 3.12 and a pinned uv image | L5 | Trivial |
 
-Each fix follows the project rule: the regression test must fail before the fix and pass after.
-
-## Fixes applied (actions 1 to 5)
-
-Five regression tests were added and all five failed before the fixes:
-
-- `test_chat.py`: `test_plain_reply_keeps_changes_made_while_thinking`, `test_operations_apply_to_the_latest_board` and `test_missing_api_key_is_a_clean_502`
-- `test_api.py`: `test_overlapping_moves_are_both_saved`
-- `test_board.py`: `test_move_card_clamps_negative_position`
-
-| Finding | Fix |
-|---------|-----|
-| H1, M1 | `api.py`: `UserBoard.save()` is replaced by `UserBoard.update(change)`, which loads, changes, validates and saves under one module-level lock. Every mutating route goes through it. `chat()` calls the model with no lock held, then applies the operations inside `update()` to the board as it is at that moment. |
-| M2 | `scripts/start.sh` and `scripts/start.ps1` publish on `127.0.0.1:8000` (confirmed in `docker ps`: `127.0.0.1:8000->8000/tcp`). The Docker test's container is bound the same way. |
-| L1 | `ai.complete` raises `AIError` when the key is missing, so the route returns 502. It does not pass `None` to the SDK, which would silently fall back to `OPENAI_API_KEY`. |
-| L2 | `board.move_card` clamps the position to 0 or more. |
-
-Results after the fixes:
-
-| Suite | Result |
-|-------|--------|
-| Backend | 82 passed, 99% coverage |
-| Live AI + Docker | 6 passed |
-| Playwright | 39 passed |
-| Start script | Container healthy, then stopped |
+Each fix follows the project rule: its regression test must fail before the fix and pass after.

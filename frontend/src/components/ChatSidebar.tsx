@@ -7,22 +7,12 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
+import { ArrowUp, PanelRightClose, Sparkles } from "lucide-react";
 import { api, ApiError, type ChatMessage } from "@/lib/api";
 import type { BoardData } from "@/lib/kanban";
 
 // Four lines of text (24px each) plus the box padding; beyond this the box scrolls.
 const MAX_INPUT_HEIGHT = 108;
-
-const SparkleIcon = ({ className }: { className: string }) => (
-  <svg
-    viewBox="0 0 24 24"
-    className={className}
-    fill="currentColor"
-    aria-hidden="true"
-  >
-    <path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2zm7 11l.9 2.6L22.5 16l-2.6.9L19 19.5l-.9-2.6-2.6-.9 2.6-.9L19 13zM6 15l.7 2.3L9 18l-2.3.7L6 21l-.7-2.3L3 18l2.3-.7L6 15z" />
-  </svg>
-);
 
 type ChatSidebarProps = {
   onBoardChange: (board: BoardData) => void;
@@ -33,7 +23,11 @@ export const ChatSidebar = ({
   onBoardChange,
   onUnauthorized,
 }: ChatSidebarProps) => {
-  const [open, setOpen] = useState(true);
+  // Open by default only where it sits beside the board (xl); on smaller screens it
+  // would float over the cards.
+  const [open, setOpen] = useState(
+    () => window.matchMedia("(min-width: 80rem)").matches
+  );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -111,20 +105,21 @@ export const ChatSidebar = ({
         aria-label="AI assistant"
         aria-hidden={!open}
         inert={!open}
-        className={`fixed bottom-4 right-4 z-20 w-[min(360px,calc(100vw-2rem))] origin-bottom-right overflow-hidden rounded-3xl border border-(--stroke) bg-white/95 shadow-(--shadow) backdrop-blur transition-all duration-300 ease-in-out xl:sticky xl:inset-auto xl:top-0 xl:z-auto xl:h-screen xl:shrink-0 xl:origin-center xl:rounded-none xl:border-0 xl:border-l xl:bg-white/70 ${
+        className={`fixed bottom-4 right-4 z-20 w-[min(320px,calc(100vw-2rem))] origin-bottom-right overflow-hidden rounded-3xl border border-(--stroke) bg-white/95 shadow-(--shadow) backdrop-blur transition-all duration-300 ease-in-out xl:sticky xl:inset-auto xl:top-0 xl:z-auto xl:h-screen xl:shrink-0 xl:origin-center xl:rounded-none xl:border-0 xl:border-l xl:bg-white/70 ${
           open
-            ? "xl:w-90"
+            ? "xl:w-80"
             : "invisible scale-50 opacity-0 xl:w-0 xl:scale-100 xl:border-l-0"
         }`}
       >
-        <div className="flex h-120 flex-col xl:h-full xl:w-90">
+        {/* Never taller than the window, so the header stays reachable when zoomed in. */}
+        <div className="flex h-[min(30rem,calc(100dvh-2rem))] flex-col xl:h-full xl:w-80">
           <div className="flex items-center justify-between gap-3 px-5 pb-4 pt-6">
             <div className="flex items-center gap-3">
               <span
                 aria-hidden="true"
                 className="flex h-10 w-10 items-center justify-center rounded-2xl bg-(--secondary-purple) text-white shadow-[0_8px_20px_rgba(117,57,145,0.35)]"
               >
-                <SparkleIcon className="h-5 w-5" />
+                <Sparkles className="h-5 w-5" />
               </span>
               <div>
                 <h2 className="font-display text-lg font-semibold leading-tight text-foreground">
@@ -136,9 +131,11 @@ export const ChatSidebar = ({
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="rounded-full border border-(--stroke) bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-(--gray-text) transition hover:border-(--primary-blue) hover:text-(--primary-blue)"
+              aria-label="Hide"
+              title="Hide assistant"
+              className="rounded-lg p-2 text-(--gray-text) transition hover:bg-(--surface) hover:text-(--primary-blue)"
             >
-              Hide
+              <PanelRightClose aria-hidden="true" className="h-4 w-4" />
             </button>
           </div>
 
@@ -212,9 +209,11 @@ export const ChatSidebar = ({
               <button
                 type="submit"
                 disabled={loading || !input.trim()}
-                className="rounded-xl bg-(--secondary-purple) px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:brightness-110 disabled:opacity-40"
+                aria-label="Send"
+                title="Send"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--secondary-purple) text-white transition hover:brightness-110 disabled:opacity-40"
               >
-                Send
+                <ArrowUp aria-hidden="true" className="h-4 w-4" />
               </button>
             </div>
           </form>
@@ -228,7 +227,7 @@ export const ChatSidebar = ({
           open ? "invisible scale-50 opacity-0" : ""
         }`}
       >
-        <SparkleIcon className="h-6 w-6" />
+        <Sparkles aria-hidden="true" className="h-6 w-6" />
       </button>
     </>
   );

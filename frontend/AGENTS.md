@@ -11,6 +11,7 @@ Kanban Studio: a single-board Kanban UI.
 |------|--------|
 | Framework | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
 | Drag and drop | `@dnd-kit/core`, `@dnd-kit/sortable` |
+| Icons | `lucide-react` (pinned) |
 | Unit tests | Vitest + Testing Library (jsdom) |
 | E2E tests | Playwright (chromium) |
 | Fonts | Space Grotesk (display), Manrope (body) via `next/font/google`; needs network at build time |
@@ -44,8 +45,8 @@ Column ids are fixed (`col-backlog`, `col-discovery`, `col-progress`, `col-revie
 | `AuthGate.tsx` | Calls `/api/me` on load and shows `LoginForm` or `KanbanBoard`. Owns the login and logout calls. |
 | `LoginForm.tsx` | Username/password form with an error message |
 | `KanbanBoard.tsx` | Owns the board state (see below) |
-| `KanbanColumn.tsx` | Droppable column with an editable title (`onRename` while typing, `onRenameCommit` on blur) and its card list |
-| `KanbanCard.tsx` | Sortable card with Edit (inline title/details form; drag disabled while editing) and Remove buttons |
+| `KanbanColumn.tsx` | Droppable column: editable title (`onRename` while typing, `onRenameCommit` on blur), card count badge, its card list, then `NewCardForm` |
+| `KanbanCard.tsx` | Sortable card with pencil (Edit: inline title/details form; drag disabled while editing) and trash (Delete) icon buttons. With a mouse the icons appear on hover over the title's corner; on touch screens (`pointer-coarse`) they always show and the title leaves room for them |
 | `KanbanCardPreview.tsx` | Card visual used in the `DragOverlay` |
 | `NewCardForm.tsx` | Collapsible add-card form per column |
 | `ChatSidebar.tsx` | AI assistant panel (see below) |
@@ -56,15 +57,16 @@ Column ids are fixed (`col-backlog`, `col-discovery`, `col-progress`, `col-revie
 - **Saving:** edit, delete and drag update the screen first, then save. If a save fails it shows an error and reloads the server's board. Add card waits for the server, which assigns the id. Column titles are saved on blur.
 - **Drag and drop:** `DndContext` uses `pointerWithin`, falling back to `closestCorners`, so a card lands in the column under the pointer, including empty columns. `closestCorners` alone picked a neighbouring column's card.
 - A 401 calls `onLogout`.
-- Renders a Log out button, an error banner, and `ChatSidebar` (passing `setBoard` so applied AI changes show without a reload).
+- Renders a slim header (title, card count, Log out), an error banner, and `ChatSidebar` (passing `setBoard` so applied AI changes show without a reload).
+- **Layout:** the board grid fits as many columns per row as it can at 10.5rem or wider (`repeat(auto-fit, minmax(10.5rem, 1fr))`); columns that do not fit wrap onto the next row, so there is never sideways scrolling (also when zoomed in). Rows stretch to the bottom of the window and the page scrolls when the cards need more room. At 1280px with the sidebar open all five still fit in one row, which the drag e2e tests rely on. Column titles shrink in columns under 12rem (container query). Below `sm` the columns stack.
 - The page wrapper must use `overflow-clip`, not `overflow-hidden`, or the sticky sidebar breaks.
 
 ### `ChatSidebar` behaviour
 
 - **Placement:** stays in place while the page scrolls.
   - `xl` (1280px) and wider: a full-height sticky column to the right of the board.
-  - Narrower: a floating panel pinned bottom-right.
-- **Hide / show:** the Hide button animates it away completely (the column collapses to zero width, or the floating panel shrinks into the corner). A round purple AI button (`Show AI assistant`) appears bottom-right to bring it back. The panel stays mounted (`aria-hidden` and `inert` while hidden), so the conversation is kept.
+  - Narrower: a floating panel pinned bottom-right. It starts hidden there (`matchMedia`), so it does not cover the board, and is never taller than the window; `src/test/setup.ts` stubs `matchMedia` as a wide screen.
+- **Hide / show:** the Hide icon button animates it away completely (the column collapses to zero width, or the floating panel shrinks into the corner). A round purple AI button (`Show AI assistant`) appears bottom-right to bring it back. The panel stays mounted (`aria-hidden` and `inert` while hidden), so the conversation is kept.
 - **Input:** an auto-growing textarea, up to 4 lines (108px), then it scrolls. Enter sends, Shift+Enter adds a new line.
 - **Chat:** keeps the conversation in React state and sends `message` + `history` to `POST /api/chat` via `api.chat`. Shows a Thinking state and an error message.
 - Calls `onBoardChange(board)` only when operations were applied. A 401 calls `onUnauthorized`.
@@ -93,7 +95,7 @@ Column ids are fixed (`col-backlog`, `col-discovery`, `col-progress`, `col-revie
 |------|--------|
 | `src/lib/kanban.test.ts` | `moveCard`: reorder, cross-column, drop on empty column area, unknown ids, no mutation |
 | `src/components/KanbanBoard.test.tsx` | Loading, load failure, 401, rename on blur, add (success and failure), edit, delete, blank-title guards, cancel, failed save reloads the board, error clears |
-| `src/components/ChatSidebar.test.tsx` | Empty input blocked, send, Enter / Shift+Enter, loading, history accumulates, board callback only when operations applied, skipped note, error, 401, hide and show keeping the conversation |
+| `src/components/ChatSidebar.test.tsx` | Empty input blocked, send, Enter / Shift+Enter, loading, history accumulates, board callback only when operations applied, skipped note, error, 401, hide and show keeping the conversation, starts hidden on narrow screens |
 | `src/components/LoginForm.test.tsx` | Login form and error display |
 | `src/components/AuthGate.test.tsx` | Signed out, signed in, API down, login, logout (mocked fetch) |
 
@@ -105,6 +107,7 @@ Column ids are fixed (`col-backlog`, `col-discovery`, `col-progress`, `col-revie
 | `tests/auth.spec.ts` | Login form on first visit, bad password, login persists across reload, logout, API 401 after logout |
 | `tests/persistence.spec.ts` | Add, edit, rename, delete, drag and reorder survive a reload; changes survive logout/login; a second browser session sees them; 401 without sign-in |
 | `tests/drag-targets.spec.ts` | Regression: dropping on an empty Backlog / Review column at several heights keeps the card there and saves it; dropping below the cards of a non-empty column |
+| `tests/layout.spec.ts` | Zoomed-in windows: at 781 wide the Done column wraps onto a second row with no sideways overflow, and a card can be dragged into it; at 640x360 the opened assistant fits and can be hidden |
 | `tests/chat.spec.ts` | Uses `AI_STUB` (send `STUB:{json}` to script the reply): add, edit, move, delete, rename column, persistence, plain question, AI error, hide into the AI button and reopen |
 
 ## Known gaps versus the requirements

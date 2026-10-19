@@ -23,7 +23,10 @@ const send = async (text: string) => {
 };
 
 describe("ChatSidebar", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   it("blocks empty input", async () => {
     const { mock } = setup();
@@ -136,5 +139,15 @@ describe("ChatSidebar", () => {
     await userEvent.click(screen.getByRole("button", { name: "Show AI assistant" }));
     expect(panel).toHaveAttribute("aria-hidden", "false");
     expect(screen.getByText("Done.")).toBeInTheDocument();
+  });
+
+  it("starts hidden on screens too narrow to show it beside the board", () => {
+    vi.spyOn(window, "matchMedia").mockReturnValue({ matches: false } as MediaQueryList);
+    setup();
+    expect(screen.getByLabelText("AI assistant", { selector: "aside" })).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
+    expect(window.matchMedia).toHaveBeenCalledWith("(min-width: 80rem)");
   });
 });

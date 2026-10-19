@@ -55,7 +55,7 @@ Made during Parts 2 to 7.
   - `DB_PATH`: default `backend/data/pm.db`, git-ignored.
   - `SESSION_SECRET`: cookie signing. A dev-only default is used if unset; acceptable for the local MVP.
   - `create_app(static_dir, db_path)` builds the app so tests can use temporary paths.
-- **Docker:** two-stage `Dockerfile` (Node 22 builds the frontend, Python 3.12 with `uv` runs the backend). The start scripts mount the named volume `pm-data` at `/app/backend/data` so the database survives stop and start (user approved). Reset the board with `docker volume rm pm-data`.
+- **Docker:** two-stage `Dockerfile` (Node 24 builds the frontend, Python 3.12 with `uv` runs the backend). The start scripts mount the named volume `pm-data` at `/app/backend/data` so the database survives stop and start (user approved). Reset the board with `docker volume rm pm-data`.
 - **Auth:** no separate login route; `/` shows the login form when `/api/me` returns 401. Sessions are SameSite=Lax HttpOnly signed cookies. `current_user` in `auth.py` is the dependency every board and chat route uses.
 - **Board rules** (enforced in `board.py` on every save; invalid boards are never stored):
   - exactly the five fixed column ids, in order
@@ -391,3 +391,40 @@ Results:
 - **Results:** backend 85 passed (99% coverage), Playwright 39 passed, Docker 1 passed.
 - **Live check:** after the fix, 1 of 15 requests still failed, after three overloaded attempts in a row.
 - **Free-tier limit, also found:** the key is on OpenRouter's free tier, which allows 50 free-model requests per day (`X-RateLimit-Limit: 50`, reset 00:00 UTC). The day's testing used it up, so later requests got 429 "Rate limit exceeded: free-models-per-day". Retries are not used for 429. Adding 10 credits raises the limit to 1000 per day.
+
+## Security update (packages)
+
+- **Upgraded:** Next.js 16.1.6 to 16.4.1, React 19.2.3 to 19.3.1, Vitest 3 to 5, plus minor updates within existing ranges. The Docker build stage moved from Node 22 to Node 24 to match local development; `@types/node` follows it.
+- **Audit:** the app's own packages now have 0 known issues (was 1 critical, 4 high). Five high remain in a dev-only lint dependency (`braces` via `eslint-config-next`); no fixed version exists yet.
+- **Vitest 5:** the test setup now imports `@testing-library/jest-dom/vitest`, the documented entry for Vitest, so matcher types resolve.
+- **E2E fix:** "the sidebar hides completely" measured the board width as soon as the sidebar counted as hidden (about 5 ms) instead of after the 300 ms slide. Newer Playwright detects hidden sooner, so it failed every run. The test now polls until the board widens.
+- **Lockfile:** an incremental update on Windows dropped `@emnapi/core` and `@emnapi/runtime`, which only Linux needs (for `@img/sharp-wasm32`), so `npm ci` failed in Docker. Fixed by deleting `node_modules` and `package-lock.json` and running `npm install`. After any package change, run the Docker test.
+- **Results:** backend 85 passed, Docker 1 passed, Vitest 40 passed, Playwright 39 passed, lint clean.
+
+## UI layout update
+
+- **Header:** one slim bar (title, card count, Log out) replaces the large header, the repeated column pills and the Focus box, which took about 300px of height.
+- **Board:** columns fill the width and the full screen height, with tighter spacing. From `md` up they share the width equally and scroll sideways only below about 10.5rem each; phones stack them. At 1440px each card has about 160px for text instead of 120px.
+- **Icons:** `lucide-react` 1.48.0 (pinned; a release over two weeks old). Cards use pencil and trash icons instead of the Edit and Remove text, shown on hover with a mouse and always on touch screens. Columns show a count badge (fixes "1 cards"); Add a card, Log out, Hide and Send use icons.
+- **Chat panel:** slightly narrower (320px). Below `xl` it starts hidden, so it no longer covers the board on tablets and phones.
+- **Lockfile:** adding the icon package hit the known Windows lockfile problem again (`@emnapi/*` dropped, `npm ci` failed in Docker). Regenerated with `node_modules` removed too, which is required, and `--before=2026-10-15`; two transitive packages moved by a patch version.
+- **Tests:** a Vitest case for the panel starting hidden on narrow screens; existing selectors unchanged (icon buttons keep their accessible names).
+- **Results:** backend 85 passed (99% coverage), Docker 1 passed, Vitest 41 passed, Playwright 39 passed, lint and type check clean.
+
+## Zoom fixes
+
+Browser zoom shrinks the window in CSS pixels (150% on 1920x1080 is 1280x720; 175% on 1366x768 is 781x439), so it was checked at those sizes.
+
+- **Found:** at 781x439 columns had a 520px minimum height, so the page scrolled 84px and the board's sideways scrollbar sat below the window; the Done column was cut off with no visible way to reach it. At 640x360 the floating assistant (480px high) opened with its top 138px above the window, so it could not be hidden.
+- **Root cause of the first try failing:** `h-dvh` on `main` had no effect because `flex-1` (basis 0) overrides height in a flex column; the limit now sits on the outer wrapper.
+- **Fixed:** from `md` up the board is exactly the window height and each column scrolls its own cards; the floating assistant is capped at the window height; column titles shrink in narrow columns; the login form has vertical padding.
+- **Tests:** `tests/layout.spec.ts` (2 tests). Both failed before the fix (page overflow; panel top at -138px) and pass after. Checked by screenshot at 100% to 300% on 1920x1080, 1440x900 and 1366x768: no page scroll at any `md`+ size.
+- **Results:** backend 85 passed, Docker 1 passed, Vitest 41 passed, Playwright 41 passed, lint and type check clean.
+
+## Wrapping columns
+
+- **Change (user request):** when the five columns do not fit side by side, the ones that do not fit now move down to the next row instead of the board scrolling sideways. This replaces the fit-to-window layout from "Zoom fixes": columns no longer scroll their own cards, and the page scrolls up and down instead.
+- **How:** the board is a grid with `repeat(auto-fit, minmax(10.5rem, 1fr))`. `auto-fit` (not `auto-fill`) so wide screens do not get empty column slots. Phones still stack the columns.
+- **Checked:** one row of 5 down to 960 wide (and at 1280 with the sidebar open), 4 + 1 at 781, 3 + 2 at 640, stacked at 390; no sideways overflow at any size.
+- **Tests:** `tests/layout.spec.ts` now checks the wrap (Done below Backlog, every column inside the window; the old layout put Done 147px past the edge) and dragging a card into a column on the second row.
+- **Results:** backend 85 passed, Docker 1 passed, Vitest 41 passed, Playwright 42 passed, lint and type check clean.

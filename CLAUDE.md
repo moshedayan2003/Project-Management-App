@@ -44,6 +44,7 @@ Before changing an area, read its detail file and update it when the structure c
 - Drag collision detection is `pointerWithin` falling back to `closestCorners`; plain `closestCorners` drops cards in the wrong column when the target is empty.
 - Playwright tests share one user and board: keep `workers: 1`.
 - The frontend build fetches Google fonts, so it needs network.
+- Any `npm install` on Windows drops the Linux-only `@emnapi/*` lock entries, so `npm ci` fails in Docker. Delete `node_modules` and `package-lock.json`, reinstall, then run the Docker test.
 - Always close sqlite connections (`db._connect` does); on Windows an open connection blocks deleting the DB file.
 
 ## Workflow

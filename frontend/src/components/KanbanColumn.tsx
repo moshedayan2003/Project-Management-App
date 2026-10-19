@@ -30,29 +30,28 @@ export const KanbanColumn = ({
     <section
       ref={setNodeRef}
       className={clsx(
-        "flex min-h-130 flex-col rounded-3xl border border-(--stroke) bg-(--surface-strong) p-4 shadow-(--shadow) transition",
+        "@container flex min-w-0 flex-col rounded-3xl border border-(--stroke) bg-(--surface-strong)/80 p-3 shadow-[0_4px_16px_rgba(3,33,71,0.06)] transition",
         isOver && "ring-2 ring-(--accent-yellow)"
       )}
       data-testid={`column-${column.id}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="w-full">
-          <div className="flex items-center gap-3">
-            <div className="h-2 w-10 rounded-full bg-(--accent-yellow)" />
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-(--gray-text)">
-              {cards.length} cards
-            </span>
-          </div>
-          <input
-            value={column.title}
-            onChange={(event) => onRename(column.id, event.target.value)}
-            onBlur={(event) => onRenameCommit(column.id, event.target.value)}
-            className="mt-3 w-full bg-transparent font-display text-lg font-semibold text-foreground outline-none"
-            aria-label="Column title"
-          />
-        </div>
+      <div className="flex items-center gap-2 px-1">
+        <span className="h-2 w-2 shrink-0 rounded-full bg-(--accent-yellow)" />
+        <input
+          value={column.title}
+          onChange={(event) => onRename(column.id, event.target.value)}
+          onBlur={(event) => onRenameCommit(column.id, event.target.value)}
+          className="min-w-0 flex-1 rounded-lg bg-transparent px-1 py-0.5 font-display text-sm font-semibold text-foreground outline-none @[12rem]:text-base transition focus:bg-(--surface)"
+          aria-label="Column title"
+        />
+        <span
+          className="shrink-0 rounded-full bg-(--surface) px-2 py-0.5 text-xs font-semibold text-(--gray-text)"
+          aria-label={`${cards.length} ${cards.length === 1 ? "card" : "cards"}`}
+        >
+          {cards.length}
+        </span>
       </div>
-      <div className="mt-4 flex flex-1 flex-col gap-3">
+      <div className="mt-3 flex flex-1 flex-col gap-2">
         <SortableContext items={column.cardIds} strategy={verticalListSortingStrategy}>
           {cards.map((card) => (
             <KanbanCard
@@ -64,14 +63,14 @@ export const KanbanColumn = ({
           ))}
         </SortableContext>
         {cards.length === 0 && (
-          <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-(--stroke) px-3 py-6 text-center text-xs font-semibold uppercase tracking-[0.2em] text-(--gray-text)">
+          <div className="flex items-center justify-center rounded-2xl border border-dashed border-(--stroke) px-3 py-6 text-center text-xs font-semibold uppercase tracking-[0.2em] text-(--gray-text)">
             Drop a card here
           </div>
         )}
+        <NewCardForm
+          onAdd={(title, details) => onAddCard(column.id, title, details)}
+        />
       </div>
-      <NewCardForm
-        onAdd={(title, details) => onAddCard(column.id, title, details)}
-      />
     </section>
   );
 };

@@ -23,7 +23,7 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-6">
       <form
         onSubmit={handleSubmit}
         className="flex flex-col gap-4 rounded-4xl border border-(--stroke) bg-white/80 p-8 shadow-(--shadow)"
