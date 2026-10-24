@@ -15,4 +15,4 @@ Start and stop the app in Docker.
 
 The container mounts the Docker volume `pm-data` at `/app/backend/data`, so the SQLite database survives stop and start.
 
-To reset the board, stop the app, then run `docker volume rm pm-data`.
+To reset all data, stop the app, then run `docker volume rm pm-data`.

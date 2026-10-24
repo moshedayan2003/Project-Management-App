@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signInWithFreshBoard } from "./helpers";
+import { savedBoard, signInWithFreshBoard } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await signInWithFreshBoard(page);
@@ -72,7 +72,7 @@ test("a dragged card keeps its new column and position after a reload", async ({
   // Wait for the save to reach the server before reloading.
   await expect
     .poll(async () => {
-      const board = await (await page.request.get("/api/board")).json();
+      const board = await savedBoard(page.request);
       return board.columns.find((c: { id: string }) => c.id === "col-review").cardIds;
     })
     .toContain("card-1");
@@ -96,16 +96,16 @@ test("a card reordered within its column keeps the order after a reload", async 
   await page.mouse.up();
   await expect
     .poll(async () => {
-      const board = await (await page.request.get("/api/board")).json();
+      const board = await savedBoard(page.request);
       return board.columns.find((c: { id: string }) => c.id === "col-progress").cardIds;
     })
     .toEqual(["card-5", "card-4"]);
 
   await page.reload();
-  const ids = await page
-    .getByTestId("column-col-progress")
-    .locator('[data-testid^="card-"]')
-    .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
+  // Wait for the reloaded board before reading the order.
+  const cards = page.getByTestId("column-col-progress").locator('[data-testid^="card-"]');
+  await expect(cards).toHaveCount(2);
+  const ids = await cards.evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
   expect(ids).toEqual(["card-card-5", "card-card-4"]);
 });
 
@@ -117,7 +117,7 @@ test("changes survive logout and login", async ({ page }) => {
   await page.getByTestId("card-card-7").getByRole("button", { name: "Delete Ship marketing page" }).click();
   await expect(page.getByTestId("card-card-7")).toHaveCount(0);
   await expect
-    .poll(async () => (await (await page.request.get("/api/board")).json()).cards["card-7"])
+    .poll(async () => (await savedBoard(page.request)).cards["card-7"])
     .toBeUndefined();
 
   await page.getByRole("button", { name: "Log out" }).click();
@@ -149,7 +149,7 @@ test("a second browser session sees the same board", async ({ page, browser }) =
 
 test("the board cannot be loaded without signing in", async ({ browser }) => {
   const context = await browser.newContext();
-  const response = await context.request.get("/api/board");
+  const response = await context.request.get("/api/boards");
   expect(response.status()).toBe(401);
   await context.close();
 });

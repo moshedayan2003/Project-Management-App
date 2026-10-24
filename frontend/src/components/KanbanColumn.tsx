@@ -1,23 +1,25 @@
 import clsx from "clsx";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import type { Card, Column } from "@/lib/kanban";
+import { isOverdue, type Card, type CardFields, type Column } from "@/lib/kanban";
 import { KanbanCard } from "@/components/KanbanCard";
 import { NewCardForm } from "@/components/NewCardForm";
 
 type KanbanColumnProps = {
   column: Column;
-  cards: Card[];
+  cards: Card[]; // the cards to show (after filtering)
+  todayDate: string;
   onRename: (columnId: string, title: string) => void;
   onRenameCommit: (columnId: string, title: string) => void;
   onAddCard: (columnId: string, title: string, details: string) => void;
   onDeleteCard: (columnId: string, cardId: string) => void;
-  onUpdateCard: (cardId: string, title: string, details: string) => void;
+  onUpdateCard: (cardId: string, fields: CardFields) => void;
 };
 
 export const KanbanColumn = ({
   column,
   cards,
+  todayDate,
   onRename,
   onRenameCommit,
   onAddCard,
@@ -52,11 +54,13 @@ export const KanbanColumn = ({
         </span>
       </div>
       <div className="mt-3 flex flex-1 flex-col gap-2">
-        <SortableContext items={column.cardIds} strategy={verticalListSortingStrategy}>
+        <SortableContext items={cards.map((card) => card.id)} strategy={verticalListSortingStrategy}>
           {cards.map((card) => (
             <KanbanCard
               key={card.id}
               card={card}
+              // A finished card is never late.
+              overdue={column.id !== "col-done" && isOverdue(card, todayDate)}
               onDelete={(cardId) => onDeleteCard(column.id, cardId)}
               onUpdate={onUpdateCard}
             />

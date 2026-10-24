@@ -1,42 +1,53 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { KanbanBoard } from "@/components/KanbanBoard";
-import { LoginForm } from "@/components/LoginForm";
+import { LoginForm, type AuthMode } from "@/components/LoginForm";
+import { Workspace } from "@/components/Workspace";
+import { api, ApiError, type User } from "@/lib/api";
 
-type Status = "loading" | "signed-out" | "signed-in";
+const errorMessage = (mode: AuthMode, err: unknown) => {
+  const status = err instanceof ApiError ? err.status : 0;
+  if (mode === "sign-in" && status === 401) {
+    return "Invalid username or password";
+  }
+  if (status === 409) {
+    return "That username is taken";
+  }
+  if (status === 422) {
+    return "Use 3 to 32 lowercase letters, digits, - or _, and a password of at least 8 characters.";
+  }
+  return "Could not reach the server. Please try again.";
+};
 
 export const AuthGate = () => {
-  const [status, setStatus] = useState<Status>("loading");
+  // undefined while checking the session, null when signed out.
+  const [user, setUser] = useState<User | null | undefined>(undefined);
 
   useEffect(() => {
-    fetch("/api/me")
-      .then((response) => setStatus(response.ok ? "signed-in" : "signed-out"))
-      .catch(() => setStatus("signed-out"));
+    api.me().then(setUser, () => setUser(null));
   }, []);
 
-  const handleLogin = async (username: string, password: string) => {
-    const response = await fetch("/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    if (response.ok) {
-      setStatus("signed-in");
+  const handleSubmit = async (mode: AuthMode, username: string, password: string) => {
+    try {
+      const call = mode === "sign-in" ? api.login : api.register;
+      setUser(await call(username, password));
+      return null;
+    } catch (err) {
+      return errorMessage(mode, err);
     }
-    return response.ok;
   };
 
   const handleLogout = async () => {
-    await fetch("/api/logout", { method: "POST" });
-    setStatus("signed-out");
+    await api.logout().catch(() => {});
+    setUser(null);
   };
 
-  if (status === "loading") {
+  if (user === undefined) {
     return null;
   }
-  if (status === "signed-out") {
-    return <LoginForm onLogin={handleLogin} />;
+  if (user === null) {
+    return <LoginForm onSubmit={handleSubmit} />;
   }
-  return <KanbanBoard onLogout={handleLogout} />;
+  // Also used when the session has expired or the account was deleted.
+  return <Workspace key={user.id} user={user} onLogout={handleLogout} />;
 };

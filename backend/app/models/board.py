@@ -1,16 +1,23 @@
-from typing import Annotated
+from datetime import date
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, StringConstraints, model_validator
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+Label = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=24)]
+Priority = Literal["low", "medium", "high"]
 
 COLUMN_IDS = ["col-backlog", "col-discovery", "col-progress", "col-review", "col-done"]
+COLUMN_TITLES = ["Backlog", "Discovery", "In Progress", "Review", "Done"]
 
 
 class Card(BaseModel):
     id: str
     title: Title
     details: str = ""
+    priority: Priority | None = None
+    due_date: date | None = None
+    labels: list[Label] = []
 
 
 class Column(BaseModel):
@@ -38,6 +45,16 @@ class Board(BaseModel):
         return self
 
 
+def empty_board() -> Board:
+    return Board(
+        columns=[
+            Column(id=column_id, title=title, cardIds=[])
+            for column_id, title in zip(COLUMN_IDS, COLUMN_TITLES)
+        ],
+        cards={},
+    )
+
+
 def default_board() -> Board:
     cards = [
         ("card-1", "Align roadmap themes", "Draft quarterly themes with impact statements and metrics."),
@@ -49,12 +66,9 @@ def default_board() -> Board:
         ("card-7", "Ship marketing page", "Final copy approved and asset pack delivered."),
         ("card-8", "Close onboarding sprint", "Document release notes and share internally."),
     ]
-    titles = ["Backlog", "Discovery", "In Progress", "Review", "Done"]
     layout = [[1, 2], [3], [4, 5], [6], [7, 8]]
-    return Board(
-        columns=[
-            Column(id=column_id, title=title, cardIds=[f"card-{n}" for n in numbers])
-            for column_id, title, numbers in zip(COLUMN_IDS, titles, layout)
-        ],
-        cards={id: Card(id=id, title=title, details=details) for id, title, details in cards},
-    )
+    board = empty_board()
+    for column, numbers in zip(board.columns, layout):
+        column.cardIds = [f"card-{n}" for n in numbers]
+    board.cards = {id: Card(id=id, title=title, details=details) for id, title, details in cards}
+    return board

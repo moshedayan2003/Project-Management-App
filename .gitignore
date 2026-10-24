@@ -177,3 +177,6 @@ cython_debug/
 
 # Local SQLite database
 backend/data/
+
+# Claude Code local settings and loop state
+.claude/

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signInWithFreshBoard } from "./helpers";
+import { savedBoard, signInWithFreshBoard } from "./helpers";
 
 // Small windows stand in for browser zoom: 175% on a 1366x768 laptop is 781x439,
 // 300% on a 1920x1080 screen is 640x360.
@@ -40,7 +40,7 @@ test.describe("zoomed in on a laptop (781 wide)", () => {
 
     await expect(page.getByTestId("column-col-done").getByTestId("card-card-1")).toBeVisible();
     await expect
-      .poll(async () => (await (await page.request.get("/api/board")).json()).columns[4].cardIds)
+      .poll(async () => (await savedBoard(page.request)).columns[4].cardIds)
       .toContain("card-1");
   });
 });

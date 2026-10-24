@@ -1,8 +1,8 @@
 # Project Management App
 
-A Kanban board with an AI chat sidebar that can create, edit and move cards.
+Kanban project boards with user accounts, several boards per user, card priorities, due dates and labels, search, and an AI chat sidebar that can create, edit and move cards.
 
-Sign in with `user` / `password`.
+Create an account on the sign-in page, or use the demo account `user` / `password`.
 
 ## Run
 

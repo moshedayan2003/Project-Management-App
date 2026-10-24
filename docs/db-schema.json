@@ -6,18 +6,23 @@
       "columns": {
         "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
         "username": "TEXT NOT NULL UNIQUE",
-        "password_hash": "TEXT NULL"
+        "password_hash": "TEXT (scrypt$<cost>$<salt hex>$<hash hex>; NULL only in a version 1 database before its first start)"
       },
-      "notes": "MVP seeds one row: username 'user'. Login stays hardcoded to user/password for now, so password_hash is unused (NULL). It is there so real passwords can be added later without a migration."
+      "notes": "Users register with a username matching ^[a-z0-9_-]{3,32}$ and a password of 8 to 128 characters. The demo user 'user' / 'password' is created on startup if missing."
     },
     "boards": {
       "columns": {
         "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
-        "user_id": "INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE",
+        "user_id": "INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE",
+        "name": "TEXT NOT NULL (1 to 60 characters, trimmed)",
         "data": "TEXT NOT NULL (JSON document, see board_data)",
+        "created_at": "TEXT NOT NULL (UTC ISO 8601)",
         "updated_at": "TEXT NOT NULL (UTC ISO 8601)"
       },
-      "notes": "One board per user for the MVP, enforced by UNIQUE on user_id. Dropping that constraint (and adding a name column) is the only change needed to allow several boards per user."
+      "indexes": {
+        "boards_by_user": "boards(user_id)"
+      },
+      "notes": "Any number of boards per user. Every query is scoped by user_id. Version 1 had UNIQUE(user_id) and no name; init_db rebuilds that table (see DATABASE.md)."
     }
   },
   "board_data": {
@@ -27,21 +32,39 @@
       "every card id appears in exactly one column's cardIds, and every cardIds entry exists in cards",
       "cards is keyed by card id; the key equals the card's id field",
       "title is non-empty; details may be an empty string",
-      "card order within a column is the order of cardIds"
+      "card order within a column is the order of cardIds",
+      "priority, due_date and labels are optional; missing means null, null and []"
     ],
     "schema": {
       "type": "object",
-      "required": ["columns", "cards"],
+      "required": [
+        "columns",
+        "cards"
+      ],
       "properties": {
         "columns": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["id", "title", "cardIds"],
+            "required": [
+              "id",
+              "title",
+              "cardIds"
+            ],
             "properties": {
-              "id": { "type": "string" },
-              "title": { "type": "string", "minLength": 1 },
-              "cardIds": { "type": "array", "items": { "type": "string" } }
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "cardIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           }
         },
@@ -49,11 +72,45 @@
           "type": "object",
           "additionalProperties": {
             "type": "object",
-            "required": ["id", "title", "details"],
+            "required": [
+              "id",
+              "title",
+              "details"
+            ],
             "properties": {
-              "id": { "type": "string" },
-              "title": { "type": "string", "minLength": 1 },
-              "details": { "type": "string" }
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "details": {
+                "type": "string"
+              },
+              "priority": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  null
+                ]
+              },
+              "due_date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date"
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 24
+                }
+              }
             }
           }
         }
@@ -61,19 +118,47 @@
     },
     "example": {
       "columns": [
-        { "id": "col-backlog", "title": "Backlog", "cardIds": ["card-1"] },
-        { "id": "col-discovery", "title": "Discovery", "cardIds": [] },
-        { "id": "col-progress", "title": "In Progress", "cardIds": [] },
-        { "id": "col-review", "title": "Review", "cardIds": [] },
-        { "id": "col-done", "title": "Done", "cardIds": [] }
+        {
+          "id": "col-backlog",
+          "title": "Backlog",
+          "cardIds": [
+            "card-1"
+          ]
+        },
+        {
+          "id": "col-discovery",
+          "title": "Discovery",
+          "cardIds": []
+        },
+        {
+          "id": "col-progress",
+          "title": "In Progress",
+          "cardIds": []
+        },
+        {
+          "id": "col-review",
+          "title": "Review",
+          "cardIds": []
+        },
+        {
+          "id": "col-done",
+          "title": "Done",
+          "cardIds": []
+        }
       ],
       "cards": {
         "card-1": {
           "id": "card-1",
           "title": "Align roadmap themes",
-          "details": "Draft quarterly themes with impact statements and metrics."
+          "details": "Draft quarterly themes with impact statements and metrics.",
+          "priority": "high",
+          "due_date": "2026-11-01",
+          "labels": [
+            "strategy"
+          ]
         }
       }
     }
-  }
+  },
+  "version": 2
 }

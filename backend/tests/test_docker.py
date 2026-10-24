@@ -51,21 +51,27 @@ def test_container_serves_page_auth_and_persists_board():
 
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
         assert call(opener, "/api/me")[0] == 401
-        assert call(opener, "/api/board")[0] == 401
+        assert call(opener, "/api/boards")[0] == 401
         assert call(opener, "/api/login", {"username": "user", "password": "bad"})[0] == 401
         assert call(opener, "/api/login", {"username": "user", "password": "password"})[0] == 200
 
-        status, board = call(opener, "/api/board")
+        status, boards = call(opener, "/api/boards")
+        assert status == 200 and boards[0]["card_count"] == 8
+        board_url = f"/api/boards/{boards[0]['id']}"
+        status, board = call(opener, board_url)
         assert status == 200 and len(board["columns"]) == 5 and len(board["cards"]) == 8
 
-        status, _ = call(opener, "/api/columns/col-done", {"title": "Shipped"}, method="PATCH")
+        status, _ = call(opener, f"{board_url}/columns/col-done", {"title": "Shipped"}, method="PATCH")
         assert status == 200
+        status, _ = call(opener, "/api/boards", {"name": "Second"})
+        assert status == 201
 
         # The database file survives a container restart.
         subprocess.run(["docker", "restart", NAME], check=True, capture_output=True)
         wait_until_up()
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
         call(opener, "/api/login", {"username": "user", "password": "password"})
-        assert call(opener, "/api/board")[1]["columns"][-1]["title"] == "Shipped"
+        assert call(opener, board_url)[1]["columns"][-1]["title"] == "Shipped"
+        assert [b["name"] for b in call(opener, "/api/boards")[1]] == ["My board", "Second"]
     finally:
         subprocess.run(["docker", "rm", "-f", NAME], capture_output=True)

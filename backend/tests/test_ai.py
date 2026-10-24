@@ -50,12 +50,12 @@ def test_live_chat_question_changes_nothing():
 
 @pytest.mark.live
 @pytest.mark.skipif(not os.environ.get("OPENROUTER_API_KEY"), reason="no OPENROUTER_API_KEY")
-def test_live_chat_route_changes_stored_board(auth_client):
+def test_live_chat_route_changes_stored_board(auth_client, board_url):
     response = auth_client.post(
-        "/api/chat", json={"message": "Delete card-8 and rename the Review column to QA."}
+        f"{board_url}/chat", json={"message": "Delete card-8 and rename the Review column to QA."}
     )
     assert response.status_code == 200
-    stored = auth_client.get("/api/board").json()
+    stored = auth_client.get(board_url).json()
     assert stored == response.json()["board"]
     assert "card-8" not in stored["cards"]
     assert next(c for c in stored["columns"] if c["id"] == "col-review")["title"] == "QA"

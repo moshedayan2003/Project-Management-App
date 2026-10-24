@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import date
 from typing import Annotated, Literal
 
 from dotenv import load_dotenv
@@ -8,7 +9,7 @@ from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, Field, ValidationError
 
 from app.config import ROOT_DIR
-from app.models.board import Board
+from app.models.board import Board, Priority
 
 load_dotenv(ROOT_DIR / ".env")
 
@@ -18,14 +19,14 @@ MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
 OVERLOAD_RETRY_DELAYS = [1, 2]
 
 SYSTEM_PROMPT = """You are the assistant inside a Kanban project board app.
-The board is JSON: five fixed columns (id, title, cardIds) and a map of cards (id, title, details).
+The board is JSON: five fixed columns (id, title, cardIds) and a map of cards
+(id, title, details, priority: low/medium/high or null, due_date: YYYY-MM-DD or null, labels).
 Columns cannot be added, removed or reordered; you may only rename them.
 Refer to cards and columns by their ids. A new card is created in a column.
 When the user asks for a change, put it in `operations` (in order) and say what you did in `message`.
+In update_card, leave fields you do not change as null.
 When the user only asks a question or chats, leave `operations` empty.
 Only use ids that exist in the board. Reply briefly.
-
-Current board:
 """
 
 
@@ -38,6 +39,9 @@ class CreateCard(BaseModel):
     column_id: str
     title: str
     details: str = ""
+    priority: Priority | None = None
+    due_date: date | None = None
+    labels: list[str] = []
 
 
 class UpdateCard(BaseModel):
@@ -45,6 +49,9 @@ class UpdateCard(BaseModel):
     card_id: str
     title: str | None = None
     details: str | None = None
+    priority: Priority | None = None
+    due_date: date | None = None
+    labels: list[str] | None = None
 
 
 class MoveCard(BaseModel):
@@ -127,7 +134,11 @@ def ask(prompt: str) -> str:
 
 def chat(board: Board, history: list[ChatMessage], message: str) -> Reply:
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT + board.model_dump_json()},
+        {
+            "role": "system",
+            "content": f"{SYSTEM_PROMPT}Today is {date.today()}.\n\nCurrent board:\n"
+            + board.model_dump_json(),
+        },
         *[m.model_dump() for m in history],
         {"role": "user", "content": message},
     ]

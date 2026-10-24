@@ -9,7 +9,7 @@ from app.services import ai
 from app.services import board_ops as ops
 from app.services.board_ops import NotFoundError
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api/boards/{board_id}")
 
 
 class ChatRequest(BaseModel):
@@ -20,9 +20,12 @@ class ChatRequest(BaseModel):
 def apply_operation(board: Board, op: ai.Operation) -> Board:
     match op:
         case ai.CreateCard():
-            return ops.create_card(board, op.column_id, op.title, op.details)
+            fields = op.model_dump(exclude={"type", "column_id", "title"})
+            return ops.create_card(board, op.column_id, op.title, **fields)
         case ai.UpdateCard():
-            return ops.update_card(board, op.card_id, op.title, op.details)
+            # The model sends null for fields it leaves alone, so it cannot clear one.
+            changes = op.model_dump(exclude={"type", "card_id"}, exclude_none=True)
+            return ops.update_card(board, op.card_id, **changes)
         case ai.MoveCard():
             return ops.move_card(board, op.card_id, op.column_id, op.position)
         case ai.DeleteCard():

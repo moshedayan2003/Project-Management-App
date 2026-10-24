@@ -15,11 +15,13 @@ import type { BoardData } from "@/lib/kanban";
 const MAX_INPUT_HEIGHT = 108;
 
 type ChatSidebarProps = {
+  boardId: number;
   onBoardChange: (board: BoardData) => void;
   onUnauthorized: () => void;
 };
 
 export const ChatSidebar = ({
+  boardId,
   onBoardChange,
   onUnauthorized,
 }: ChatSidebarProps) => {
@@ -76,7 +78,7 @@ export const ChatSidebar = ({
     setError("");
     setLoading(true);
     try {
-      const result = await api.chat(text, history);
+      const result = await api.chat(boardId, text, history);
       let reply = result.message;
       if (result.skipped.length > 0) {
         reply += ` (${result.skipped.length} change(s) could not be applied.)`;
@@ -151,7 +153,7 @@ export const ChatSidebar = ({
                   How can I help with your board?
                 </p>
                 <p className="mt-2 text-sm leading-6 text-(--gray-text)">
-                  Ask me to add, edit, move or delete cards, or rename a column.
+                  Ask me to add, edit, move or delete cards, set priorities, due dates and labels, or rename a column.
                 </p>
               </div>
             )}

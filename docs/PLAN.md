@@ -20,6 +20,7 @@ Check off items (`[x]`) as they are completed. Stop for user approval where a pa
 | - | Code review fixes (H1, M1, M2, L1, L2) | Done |
 | - | Backend package restructure | Done |
 | - | Retry when the AI provider is overloaded | Done |
+| 11 | User accounts, multiple boards, card fields | Done (iteration 1 of the improvement loop) |
 
 ## Contents
 
@@ -428,3 +429,50 @@ Browser zoom shrinks the window in CSS pixels (150% on 1920x1080 is 1280x720; 17
 - **Checked:** one row of 5 down to 960 wide (and at 1280 with the sidebar open), 4 + 1 at 781, 3 + 2 at 640, stacked at 390; no sideways overflow at any size.
 - **Tests:** `tests/layout.spec.ts` now checks the wrap (Done below Backlog, every column inside the window; the old layout put Done 147px past the edge) and dragging a card into a column on the second row.
 - **Results:** backend 85 passed, Docker 1 passed, Vitest 41 passed, Playwright 42 passed, lint and type check clean.
+
+## Part 11: User accounts, multiple boards, card fields
+
+Request (user): "significantly improve this project: add user management, multiple kanban boards per user, and other features to build out a comprehensive project management application, testing thoroughly, with strong coverage and integration tests." Run as an automated loop, so the decisions below were made without a stop for approval; they are listed so the user can review them.
+
+Decisions:
+
+| Area | Decision |
+|------|----------|
+| Accounts | Self-service: register, sign in, change password, delete account (all need the password). No admin role. |
+| Usernames | `^[a-z0-9_-]{3,32}$` (lowercase only, so no case-insensitive duplicates); passwords 8 to 128 characters. |
+| Passwords | stdlib `hashlib.scrypt` with a random salt; the work factor is stored in the hash. No new dependency. |
+| Session | The cookie holds `user_id`; a deleted account's session is rejected. Sign in and register clear the old session first. |
+| Demo user | `user` / `password` is kept (tests, docs) and recreated on startup if missing. |
+| Boards | Any number per user, named (1 to 60 characters). New accounts and new boards start empty; the demo board keeps the demo cards. The last board can be deleted (the UI shows an empty state). |
+| API | Board content moved from `/api/board`, `/api/cards/...`, `/api/columns/...`, `/api/chat` to `/api/boards/{board_id}/...`. The old routes are gone (the frontend is the only client). Another user's board is a 404, not a 403. |
+| Card fields | `priority` (low/medium/high), `due_date`, `labels`: optional, stored in the board JSON, so old boards load unchanged. PATCH changes only the fields sent; null clears. The AI can set them (and gets today's date in its prompt) but cannot clear them, because its schema uses null for "unchanged". |
+| Columns | Still the five fixed columns (a business requirement). |
+| Database | Version 2: `boards` loses `UNIQUE(user_id)` and gains `name` and `created_at`. Existing databases are upgraded on startup in one transaction. See `DATABASE.md`. |
+| UI | Header: board picker with New / Rename / Delete, account button (password change, account deletion), Log out. Toolbar: card count, search (title, details, labels), priority filter. Cards show priority, due date (red when overdue, except in Done) and labels. The last opened board is remembered per browser. Each board has its own chat. |
+
+Checklist:
+
+- [x] Backend: passwords, users and boards in `db.py` with the version 1 upgrade, `CurrentUser` / `UserBoard` by board id, `routes/boards.py`, register / password / delete routes, card fields in the model, operations, routes and AI schema
+- [x] Backend tests: `test_boards.py` (new), `test_auth.py` and `test_db.py` rewritten, card-field and board-scoping tests in `test_api.py` and `test_chat.py`, Docker test covers a second board across a restart
+- [x] Frontend: `Workspace`, `BoardSwitcher`, `AccountDialog` (new), `LoginForm` with Create account, `KanbanBoard` per board id with search and priority filter, card fields in `KanbanCard`
+- [x] Frontend unit tests: `Workspace.test.tsx` (new), the other component tests and `kanban.test.ts` updated and extended
+- [x] E2E: `accounts.spec.ts`, `boards.spec.ts`, `card-fields.spec.ts` (new); helpers reset the demo user to one board
+- [x] Docs: `DATABASE.md`, `db-schema.json`, both `AGENTS.md` files, root `AGENTS.md`, `CLAUDE.md`, README
+
+**Result**
+
+| Suite | Result |
+|-------|--------|
+| Backend | 141 passed, 99% coverage (the uncovered line is `ai.ask`, used by the live tests) |
+| Vitest | 77 passed; 92.5% statements, 86.7% branches |
+| Lint and type check | Clean |
+| Playwright | 56 passed (17 new) |
+| Docker | 1 passed (creates a second board, both survive a restart) |
+| Live AI | Not run (free-tier daily limit; the prompt and schema changes are covered by the mocked tests) |
+
+- Checked by screenshot at 1440, 781 and 390 wide: header, board picker, chips, edit form, account dialog.
+- Bugs found and fixed, each with a regression test that failed first:
+  - An explicit `"title": null` in a card PATCH reached the `Card` model and raised a 500. Pydantic `ValidationError` while changing a board is now a 422 (`test_null_title_is_422_and_changes_nothing`).
+  - The version 1 upgrade was not atomic: Python's `sqlite3` does not open a transaction for `ALTER` / `CREATE`, so a failure part way left the old boards in a renamed table the app never reads. The upgrade now runs inside an explicit `BEGIN` (`test_a_failed_upgrade_changes_nothing`).
+  - The edit form's date field was cut off in narrow columns; priority and date now sit side by side only from a 15rem column width (checked by screenshot).
+- Test fixes: `persistence.spec.ts` "a card reordered..." read the card order right after a reload. Loading now takes one more request (`/api/boards` before the board), so it read an empty column. It now waits for the cards first.

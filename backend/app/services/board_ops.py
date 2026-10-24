@@ -24,24 +24,19 @@ def _column_of(board: Board, card_id: str) -> Column:
 # Board operations. Each mutates and returns the board; callers validate and save it.
 
 
-def create_card(board: Board, column_id: str, title: str, details: str = "") -> Board:
+def create_card(board: Board, column_id: str, title: str, **fields) -> Board:
+    """`fields` are optional card fields: details, priority, due_date, labels."""
     column = _column(board, column_id)
-    card = Card(id=f"card-{uuid.uuid4().hex[:8]}", title=title, details=details)
+    card = Card(id=f"card-{uuid.uuid4().hex[:8]}", title=title, **fields)
     board.cards[card.id] = card
     column.cardIds.append(card.id)
     return board
 
 
-def update_card(
-    board: Board, card_id: str, title: str | None = None, details: str | None = None
-) -> Board:
+def update_card(board: Board, card_id: str, **changes) -> Board:
+    """Replace only the given card fields; validation happens when the board is checked."""
     _column_of(board, card_id)
-    card = board.cards[card_id]
-    board.cards[card_id] = Card(
-        id=card_id,
-        title=card.title if title is None else title,
-        details=card.details if details is None else details,
-    )
+    board.cards[card_id] = Card(**{**board.cards[card_id].model_dump(), **changes, "id": card_id})
     return board
 
 

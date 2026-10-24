@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { signInWithFreshBoard } from "./helpers";
+import { boardUrl, savedBoard, signInWithFreshBoard } from "./helpers";
 import { defaultBoard } from "../src/test/fixtures";
 
 // Regression: the card must land in the column the pointer is released over,
@@ -16,7 +16,7 @@ const putLayout = async (page: Page, layout: Layout) => {
   for (const column of board.columns) {
     column.cardIds = layout[column.id] ?? [];
   }
-  const response = await page.request.put("/api/board", { data: board });
+  const response = await page.request.put(await boardUrl(page.request), { data: board });
   expect(response.ok()).toBe(true);
 };
 
@@ -43,7 +43,7 @@ const columnOf = (page: Page, cardId: string) =>
   );
 
 const savedColumnOf = async (page: Page, cardId: string) => {
-  const board = await (await page.request.get("/api/board")).json();
+  const board = await savedBoard(page.request);
   return board.columns.find((c: { cardIds: string[] }) => c.cardIds.includes(cardId)).id;
 };
 

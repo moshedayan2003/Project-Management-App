@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.models.board import COLUMN_IDS, Board, default_board
+from app.models.board import COLUMN_IDS, Board, Card, default_board, empty_board
 from app.services import board_ops as ops
 from app.services.board_ops import NotFoundError
 
@@ -18,7 +18,7 @@ def test_default_board_is_valid_and_matches_the_demo():
 
 
 def test_create_card_appends_to_column():
-    board = ops.create_card(default_board(), "col-review", "New", "Details")
+    board = ops.create_card(default_board(), "col-review", "New", details="Details")
     new_id = ids(board, "col-review")[-1]
     assert board.cards[new_id].title == "New"
     assert board.cards[new_id].details == "Details"
@@ -154,3 +154,28 @@ def test_validation_rejects_key_id_mismatch_and_blank_titles():
     data["columns"][0]["title"] = ""
     with pytest.raises(ValidationError):
         Board.model_validate(data)
+
+
+def test_empty_board_has_the_fixed_columns_and_no_cards():
+    board = empty_board()
+    assert [c.id for c in board.columns] == COLUMN_IDS
+    assert [c.title for c in board.columns] == ["Backlog", "Discovery", "In Progress", "Review", "Done"]
+    assert board.cards == {}
+
+
+def test_create_card_with_optional_fields():
+    board = ops.create_card(default_board(), "col-done", "X", priority="high", labels=["a"])
+    card = board.cards[ids(board, "col-done")[-1]]
+    assert (card.priority, card.labels, card.due_date) == ("high", ["a"], None)
+
+
+def test_update_card_changes_only_given_fields_including_new_ones():
+    board = ops.update_card(default_board(), "card-1", priority="medium", due_date="2026-11-05")
+    card = board.cards["card-1"]
+    assert (card.priority, str(card.due_date), card.title) == ("medium", "2026-11-05", "Align roadmap themes")
+
+
+def test_cards_saved_before_the_new_fields_still_load():
+    # Boards stored before priority, due date and labels existed have only id, title, details.
+    card = Card.model_validate({"id": "card-1", "title": "Old", "details": ""})
+    assert (card.priority, card.due_date, card.labels) == (None, None, [])

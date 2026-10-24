@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -13,12 +13,20 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { LayoutGrid, LogOut } from "lucide-react";
+import { Search } from "lucide-react";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
 import { api, ApiError } from "@/lib/api";
-import { moveCard, type BoardData } from "@/lib/kanban";
+import {
+  matchesFilter,
+  moveCard,
+  today,
+  type BoardData,
+  type CardFields,
+  type CardFilter,
+  type Priority,
+} from "@/lib/kanban";
 
 // Drop where the pointer is. closestCorners alone compares rectangle corners, so a card in a
 // neighbouring column can beat the column under the pointer (notably an empty column).
@@ -27,14 +35,20 @@ const collisionDetection: CollisionDetection = (args) => {
   return underPointer.length > 0 ? underPointer : closestCorners(args);
 };
 
+const controlClass =
+  "rounded-full border border-(--stroke) bg-white px-3 py-1.5 text-xs font-medium text-foreground outline-none transition focus:border-(--primary-blue)";
+
 type KanbanBoardProps = {
+  boardId: number;
+  header: ReactNode;
   onLogout: () => void;
 };
 
-export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
+export const KanbanBoard = ({ boardId, header, onLogout }: KanbanBoardProps) => {
   const [board, setBoard] = useState<BoardData | null>(null);
   const [error, setError] = useState("");
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<CardFilter>({ query: "", priority: "" });
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -56,7 +70,7 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
   };
 
   useEffect(() => {
-    api.getBoard().then(setBoard, (err) => fail(err, "Could not load the board."));
+    api.getBoard(boardId).then(setBoard, (err) => fail(err, "Could not load the board."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -67,7 +81,7 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
       setError("");
     } catch (err) {
       if (!fail(err, "Could not save your change. The board was reloaded.")) {
-        api.getBoard().then(setBoard, () => setError("Could not reach the server."));
+        api.getBoard(boardId).then(setBoard, () => setError("Could not reach the server."));
       }
     }
   };
@@ -92,7 +106,7 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
     setBoard({ ...board, columns });
     const target = columns.find((column) => column.cardIds.includes(cardId));
     if (target) {
-      persist(() => api.moveCard(cardId, target.id, target.cardIds.indexOf(cardId)));
+      persist(() => api.moveCard(boardId, cardId, target.id, target.cardIds.indexOf(cardId)));
     }
   };
 
@@ -107,24 +121,24 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
   };
 
   const handleRenameCommit = (columnId: string, title: string) => {
-    persist(() => api.renameColumn(columnId, title));
+    persist(() => api.renameColumn(boardId, columnId, title));
   };
 
   const handleAddCard = async (columnId: string, title: string, details: string) => {
     try {
-      setBoard(await api.createCard(columnId, title, details));
+      setBoard(await api.createCard(boardId, columnId, title, details));
       setError("");
     } catch (err) {
       fail(err, "Could not add the card.");
     }
   };
 
-  const handleUpdateCard = (cardId: string, title: string, details: string) => {
+  const handleUpdateCard = (cardId: string, fields: CardFields) => {
     update((current) => ({
       ...current,
-      cards: { ...current.cards, [cardId]: { id: cardId, title, details } },
+      cards: { ...current.cards, [cardId]: { id: cardId, ...fields } },
     }));
-    persist(() => api.updateCard(cardId, title, details));
+    persist(() => api.updateCard(boardId, cardId, fields));
   };
 
   const handleDeleteCard = (columnId: string, cardId: string) => {
@@ -139,20 +153,25 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
           : column
       ),
     }));
-    persist(() => api.deleteCard(cardId));
+    persist(() => api.deleteCard(boardId, cardId));
   };
 
   if (!board) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md items-center justify-center px-6 text-sm text-(--gray-text)">
-        {error || "Loading board..."}
+      <main className="flex min-h-screen flex-col gap-4 px-4 py-4 sm:px-5">
+        {header}
+        <p className="m-auto text-sm text-(--gray-text)">{error || "Loading board..."}</p>
       </main>
     );
   }
 
   const activeCard = activeCardId ? board.cards[activeCardId] : null;
-
   const cardCount = Object.keys(board.cards).length;
+  const filtering = filter.query.trim() !== "" || filter.priority !== "";
+  const visibleCount = Object.values(board.cards).filter((card) =>
+    matchesFilter(card, filter)
+  ).length;
+  const todayDate = today();
 
   return (
     <div className="relative overflow-clip">
@@ -160,34 +179,43 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
       <div className="pointer-events-none absolute bottom-0 right-0 h-130 w-130 translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,rgba(117,57,145,0.18)_0%,rgba(117,57,145,0.05)_55%,transparent_75%)]" />
 
       <div className="relative flex min-h-screen flex-col xl:flex-row">
-        <main className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 sm:px-5">
-          <header className="flex items-center justify-between gap-4 rounded-3xl border border-(--stroke) bg-white/80 px-5 py-3 shadow-(--shadow) backdrop-blur">
-            <div className="flex min-w-0 items-center gap-3">
-              <span
+        <main className="flex min-w-0 flex-1 flex-col gap-3 px-4 py-4 sm:px-5">
+          {header}
+
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <p className="mr-auto text-xs font-semibold text-(--gray-text)" aria-live="polite">
+              {filtering
+                ? `Showing ${visibleCount} of ${cardCount} cards`
+                : `${cardCount} ${cardCount === 1 ? "card" : "cards"}`}
+            </p>
+            <label className="relative">
+              <Search
                 aria-hidden="true"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--navy-dark) text-white"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <h1 className="font-display text-xl font-semibold leading-tight text-foreground">
-                  Kanban Studio
-                </h1>
-                <p className="truncate text-xs text-(--gray-text)">
-                  {cardCount} {cardCount === 1 ? "card" : "cards"} across{" "}
-                  {board.columns.length} columns
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="flex shrink-0 items-center gap-2 rounded-full border border-(--stroke) px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-(--gray-text) transition hover:border-(--primary-blue) hover:text-(--primary-blue)"
+                className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-(--gray-text)"
+              />
+              <input
+                type="search"
+                value={filter.query}
+                onChange={(event) => setFilter({ ...filter, query: event.target.value })}
+                placeholder="Search cards"
+                aria-label="Search cards"
+                className={`${controlClass} w-48 pl-8`}
+              />
+            </label>
+            <select
+              value={filter.priority}
+              onChange={(event) =>
+                setFilter({ ...filter, priority: event.target.value as Priority | "" })
+              }
+              aria-label="Filter by priority"
+              className={controlClass}
             >
-              <LogOut aria-hidden="true" className="h-3.5 w-3.5" />
-              Log out
-            </button>
-          </header>
+              <option value="">All priorities</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
 
           {error && (
             <p
@@ -212,7 +240,10 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
                 <KanbanColumn
                   key={column.id}
                   column={column}
-                  cards={column.cardIds.map((cardId) => board.cards[cardId])}
+                  cards={column.cardIds
+                    .map((cardId) => board.cards[cardId])
+                    .filter((card) => matchesFilter(card, filter))}
+                  todayDate={todayDate}
                   onRename={handleRenameColumn}
                   onRenameCommit={handleRenameCommit}
                   onAddCard={handleAddCard}
@@ -226,7 +257,7 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
             </DragOverlay>
           </DndContext>
         </main>
-        <ChatSidebar onBoardChange={setBoard} onUnauthorized={onLogout} />
+        <ChatSidebar boardId={boardId} onBoardChange={setBoard} onUnauthorized={onLogout} />
       </div>
     </div>
   );

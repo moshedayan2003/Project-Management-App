@@ -13,7 +13,7 @@ const setup = (response: FakeResponse = reply()) => {
   const mock = stubFetch(() => response);
   const onBoardChange = vi.fn();
   const onUnauthorized = vi.fn();
-  render(<ChatSidebar onBoardChange={onBoardChange} onUnauthorized={onUnauthorized} />);
+  render(<ChatSidebar boardId={1} onBoardChange={onBoardChange} onUnauthorized={onUnauthorized} />);
   return { mock, onBoardChange, onUnauthorized };
 };
 
@@ -52,7 +52,7 @@ describe("ChatSidebar", () => {
     expect(await screen.findByText("Hello there.")).toBeInTheDocument();
     expect(screen.getByText("hi")).toBeInTheDocument();
     expect(callsTo(mock)).toEqual([
-      { request: "POST /api/chat", body: { message: "hi", history: [] } },
+      { request: "POST /api/boards/1/chat", body: { message: "hi", history: [] } },
     ]);
     expect(screen.getByLabelText("Message")).toHaveValue("");
   });
@@ -67,7 +67,7 @@ describe("ChatSidebar", () => {
         return { ok: true, status: 200, json: async () => reply().body } as Response;
       })
     );
-    render(<ChatSidebar onBoardChange={() => {}} onUnauthorized={() => {}} />);
+    render(<ChatSidebar boardId={1} onBoardChange={() => {}} onUnauthorized={() => {}} />);
     await send("hi");
     expect(screen.getByText("Thinking...")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();

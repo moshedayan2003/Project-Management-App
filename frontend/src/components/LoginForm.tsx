@@ -1,25 +1,32 @@
 import { useState, type FormEvent } from "react";
 
+export type AuthMode = "sign-in" | "register";
+
 type LoginFormProps = {
-  onLogin: (username: string, password: string) => Promise<boolean>;
+  // Resolves to an error message, or null on success.
+  onSubmit: (mode: AuthMode, username: string, password: string) => Promise<string | null>;
 };
 
-const inputClass =
+export const inputClass =
   "rounded-xl border border-(--stroke) bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-foreground outline-none transition focus:border-(--primary-blue)";
-const labelClass =
+export const labelClass =
   "flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-(--gray-text)";
 
-export const LoginForm = ({ onLogin }: LoginFormProps) => {
+export const LoginForm = ({ onSubmit }: LoginFormProps) => {
+  const [mode, setMode] = useState<AuthMode>("sign-in");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const registering = mode === "register";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const ok = await onLogin(username, password);
-    if (!ok) {
-      setError("Invalid username or password");
-    }
+    setError((await onSubmit(mode, username, password)) ?? "");
+  };
+
+  const switchMode = () => {
+    setMode(registering ? "sign-in" : "register");
+    setError("");
   };
 
   return (
@@ -30,10 +37,12 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
       >
         <div className="h-2 w-10 rounded-full bg-(--accent-yellow)" />
         <h1 className="font-display text-3xl font-semibold text-foreground">
-          Sign in
+          {registering ? "Create account" : "Sign in"}
         </h1>
         <p className="text-sm text-(--gray-text)">
-          Sign in to open your Kanban board.
+          {registering
+            ? "Pick a username and a password of at least 8 characters."
+            : "Sign in to open your Kanban boards."}
         </p>
         <label className={labelClass}>
           Username
@@ -51,7 +60,7 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            autoComplete="current-password"
+            autoComplete={registering ? "new-password" : "current-password"}
             className={inputClass}
             required
           />
@@ -65,7 +74,14 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
           type="submit"
           className="rounded-full bg-(--secondary-purple) px-4 py-3 text-xs font-semibold uppercase tracking-wide text-white transition hover:brightness-110"
         >
-          Sign in
+          {registering ? "Create account" : "Sign in"}
+        </button>
+        <button
+          type="button"
+          onClick={switchMode}
+          className="text-sm font-semibold text-(--primary-blue) hover:underline"
+        >
+          {registering ? "I already have an account" : "Create an account"}
         </button>
       </form>
     </main>
